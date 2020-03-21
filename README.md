@@ -3,5 +3,5 @@ Audio detector that listens for an audio signal with the SPDIF TOSLINK or COAX r
 
 
 ## Circuit and PCB ##
-![breadboard](https://github.com/stellarshenson/audio-detector/audio-detector_bb.jpg)
+![breadboard](https://github.com/stellarshenson/audio-detector/blob/master/audio-detector_bb.jpg)
 
