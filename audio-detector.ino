@@ -4,7 +4,7 @@
  * An IR LED must be connected to the output PWM pin 3.
  * A button must be connected to the input BUTTON_PIN and GND; this is the
  * send button.
- * A visible LED can be connected to STATUS_PIN to provide status.
+ * A visible LED can be connected to STATUS_LED_PIN to provide status.
  *
  * The logic is:
  * If the button is pressed, send the IR code.
@@ -13,43 +13,112 @@
  * Version 0.11 September, 2009
  * Copyright 2009 Ken Shirriff
  * http://arcfn.com
+ * 
+ * 
  */
 
 #include <IRremote.h>
 #include <EEPROM.h>
+#include <Fsm.h>
 
-int RECV_PIN = 11;
-int BUTTON_PIN = 12;
-int STATUS_PIN = 13;
-int STORED_PIN = 10;
+#define RECV_PIN 11;
+#define BUTTON_PIN 12;
+#define STATUS_LED_PIN 13;
+#define STORED_LED_PIN 10;
+
+#define TRIGGER_IRCODE_RECORD 1
+#define TRIGGER_IRCODE_RECORDED 2
+#define TRIGGER_AUDIO_SENSED 3
+#define TRIGGER_AUDIO_ENABLED 4
+#define TRIGGER_AUDIO_DISABLED 5
 
 IRrecv irrecv(RECV_PIN);
 IRsend irsend;
 decode_results results;
 
 // Storage for the recorded code
+void storeCode(decode_results *results);
+void sendCode(int repeat);
+
 int codeType = -1; // The type of code
 unsigned long codeValue; // The code value if not raw
 unsigned int rawCodes[RAWBUF]; // The durations if raw
 int codeLen; // The length of the code
 int toggle = 0; // The RC5/6 toggle state
+int lastButtonState;
+
+
+//set up of the state machine
+void on_ircode_record_enter(); 
+void on_ircode_record_loop();
+
+State state_audio_sense(NULL, NULL, NULL);
+State state_ircode_record(on_ircode_record_enter, on_ircode_record_loop, NULL);
+State state_audio_enabled(NULL, NULL, NULL);
+State state_audio_start(NULL, NULL, NULL);
+
 
 void setup()
 {
   Serial.begin(9600);
   irrecv.enableIRIn(); // Start the receiver
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  pinMode(STATUS_PIN, OUTPUT);
-  pinMode(STORED_PIN, OUTPUT);
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  pinMode(STORED_LED_PIN, OUTPUT);
 
+  //read ircode from EEPROM
   codeValue = ( (unsigned long)EEPROM.read(0)) | ( (unsigned long)EEPROM.read(1)<<8) | ((unsigned long) EEPROM.read(2)<<16) | ( (unsigned long)EEPROM.read(3)<<24);
   codeLen = EEPROM.read(4);
   codeType = EEPROM.read(5);
-  if(codeType != -1) digitalWrite(STORED_PIN, HIGH);
+  if(codeType != -1) digitalWrite(STORED_LED_PIN, HIGH);
   Serial.print("reading stored code.. ");
   Serial.println(codeValue, HEX);
   Serial.println("system initialised");
+
+  //initialise state machine
+  fsm.add_transition(&state_audio_sense, &state_ircode_record, TRIGGER_IRCODE_RECORD, NULL);
+  fsm.add_transition(&state_ircode_record, &state_audio_sense, TRIGGER_IRCODE_RECORDED, NULL);
+  fsm.add_transition(&state_audio_sense, &state_audio_start, TRIGGER_AUDIO_SENSED, NULL);
+  fsm.add_transition(&state_audio_start, &state_audio_enabled, TRIGGER_AUDIO_ENABLED, NULL);
+  fsm.add_transition(&state_audio_enabled, &state_audio_sense, TRIGGER_AUDIO_DISABLED, NULL);
 }
+
+void loop() {
+  // If button pressed, send the code.
+  int buttonState = digitalRead(BUTTON_PIN);
+  if (lastButtonState == LOW && buttonState == HIGH) {
+    //Serial.println("Released");
+    irrecv.enableIRIn(); // Re-enable receiver
+  }
+
+  if (buttonState == LOW) {
+    //Serial.println("Pressed, sending");
+    digitalWrite(STATUS_LED_PIN, HIGH);
+    sendCode(lastButtonState == buttonState);
+    digitalWrite(STATUS_LED_PIN, LOW);
+    delay(50); // Wait a bit between retransmissions
+  } 
+  else if (irrecv.decode(&results)) {
+    digitalWrite(STATUS_LED_PIN, HIGH);
+    storeCode(&results);
+    irrecv.resume(); // resume receiver
+    digitalWrite(STATUS_LED_PIN, LOW);
+  }
+  lastButtonState = buttonState;
+}
+
+
+//////////////////////////////////////// UTILITIES ///////////////////////////////////////////////
+
+void on_ircode_record_enter() {
+  
+}
+
+
+void on_ircode_record_loop() {
+  
+}
+
 
 // Stores the code for later playback
 // Most of this code is just logging
@@ -166,30 +235,4 @@ void sendCode(int repeat) {
     irsend.sendRaw(rawCodes, codeLen, 38);
     Serial.println("Sent raw");
   }
-}
-
-int lastButtonState;
-
-void loop() {
-  // If button pressed, send the code.
-  int buttonState = digitalRead(BUTTON_PIN);
-  if (lastButtonState == LOW && buttonState == HIGH) {
-    //Serial.println("Released");
-    irrecv.enableIRIn(); // Re-enable receiver
-  }
-
-  if (buttonState == LOW) {
-    //Serial.println("Pressed, sending");
-    digitalWrite(STATUS_PIN, HIGH);
-    sendCode(lastButtonState == buttonState);
-    digitalWrite(STATUS_PIN, LOW);
-    delay(50); // Wait a bit between retransmissions
-  } 
-  else if (irrecv.decode(&results)) {
-    digitalWrite(STATUS_PIN, HIGH);
-    storeCode(&results);
-    irrecv.resume(); // resume receiver
-    digitalWrite(STATUS_PIN, LOW);
-  }
-  lastButtonState = buttonState;
 }
