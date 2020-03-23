@@ -283,7 +283,7 @@ void on_ircode_record_exit() {
 void on_audio_start_enter() {
   Serial.println("[AUDIO START] entering state, sending IR audio start signal and monitoring system startup");
 
-  //set up codes to send
+  //send audio start IR signal
   sendCode(0, startAudioCodeType, startAudioCodeLen, startAudioCodeValue); //send recorded or saved IR code without repeat
 }
 
@@ -337,7 +337,10 @@ void on_audio_enabled_loop() {
 * announce leaving the audio enabled state
 */
 void on_audio_enabled_exit() {
-  if(DEBUG_ENABLED) Serial.println("[AUDIO ENABLED] exiting state");
+  if(DEBUG_ENABLED) Serial.println("[AUDIO ENABLED] exiting state and sending audio stop IR signal");
+
+  //send audio start IR signal
+  sendCode(0, stopAudioCodeType, stopAudioCodeLen, stopAudioCodeValue); //send recorded or saved IR code without repeat
   digitalWrite(AUDIOTRIGGER_LED_PIN, LOW); //indicate that the audio is disabled
 }
 
