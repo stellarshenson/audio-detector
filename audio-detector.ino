@@ -2,7 +2,7 @@
  * IRrecord: record and play back IR signals as a minimal 
  * An IR detector/demodulator must be connected to the input RECV_PIN.
  * An IR LED must be connected to the output PWM pin 3.
- * A button must be connected to the input BUTTON_PIN and GND; this is the
+ * A button must be connected to the input RECORD_PIN and GND; this is the
  * send button.
  * A visible LED can be connected to STATUS_LED_PIN to provide status.
  *
@@ -21,8 +21,8 @@
 #include <EEPROM.h>
 #include <Fsm.h>
 
-#define RECV_PIN 11
-#define BUTTON_PIN 12
+#define RECV_PIN 2
+#define RECORD_PIN 12
 #define STATUS_LED_PIN 13
 #define STORED_LED_PIN 10
 #define RECORD_LED_PIN 9
@@ -76,7 +76,7 @@ void setup()
 {
   Serial.begin(9600);
   irrecv.enableIRIn(); // Start the receiver
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(RECORD_PIN, INPUT_PULLUP);
   pinMode(AUDIOSENSE_DIGITAL_PIN, INPUT_PULLUP);
   pinMode(AUDIOTRIGGER_PIN, INPUT_PULLUP);
   pinMode(AUDIOTRIGGER_LED_PIN, OUTPUT);
@@ -130,12 +130,12 @@ void on_audio_sense_enter() {
 * audiosense signal -> goes to start audio
 */
 void on_audio_sense_loop() {
-  // If button pressed, send the code.
-  uint8_t buttonState = digitalRead(BUTTON_PIN);
+  // If button pressed, record the code.
+  uint8_t recordButtonState = digitalRead(RECORD_PIN);
   uint8_t audioSenseState = digitalRead(AUDIOSENSE_DIGITAL_PIN);
 
   // button to enable recording ircode
-  if (buttonState == LOW) {
+  if (recordButtonState == LOW) {
     if(DEBUG_ENABLED) Serial.println("[AUDIO SENSE] ircode recording enabled...");
     blink(STATUS_LED_PIN, 1, 300);
     fsm.trigger(TRIGGER_IRCODE_RECORD);
