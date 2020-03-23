@@ -13,7 +13,7 @@
 
 #define RECV_PIN 2
 #define RECORD_PIN 12
-#define STATUS_LED_PIN 13
+#define STATUS_LED_PIN 4
 #define STORED_LED_PIN 10
 #define RECORD_LED_PIN 9
 #define AUDIOSENSE_DIGITAL_PIN 8 //output from the detector circuit. MK1 has it as a SPDIF decoder serial output
