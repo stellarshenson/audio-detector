@@ -165,6 +165,7 @@ void on_audio_sense_exit() {
 void on_ircode_record_enter() {
   irrecv.enableIRIn(); // Re-enable receiver
   digitalWrite(RECORD_LED_PIN, HIGH);
+  digitalWrite(STORED_LED_PIN, LOW);
   if(DEBUG_ENABLED) Serial.println("[IRCODE RECORD] entering state and enabling receiver");
 }
 
