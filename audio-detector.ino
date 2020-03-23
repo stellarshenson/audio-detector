@@ -1,20 +1,10 @@
 /*
- * IRrecord: record and play back IR signals as a minimal 
- * An IR detector/demodulator must be connected to the input RECV_PIN.
- * An IR LED must be connected to the output PWM pin 3.
- * A button must be connected to the input RECORD_PIN and GND; this is the
- * send button.
- * A visible LED can be connected to STATUS_LED_PIN to provide status.
- *
- * The logic is:
- * If the button is pressed, send the IR code.
- * If an IR code is received, record it.
- *
- * Version 0.11 September, 2009
- * Copyright 2009 Ken Shirriff
- * http://arcfn.com
+ * Audio detector that listens for an audio signal with the SPDIF TOSLINK or COAX receiver and controls audio components with the 12V trigger and IR signal
+ * The board used in the project is the Arduino Nano and the libraries:
+ * State Machine was implemented with *arduino_fsm* state machine library https://github.com/jonblack/arduino-fsm
+ * IR code recording and sending was implemented with *IRRemote* library https://github.com/z3t0/Arduino-IRremote
  * 
- * 
+ * Copyright by Stellars Henson 2020
  */
 
 #include <IRremote.h>
