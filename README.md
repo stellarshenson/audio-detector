@@ -36,14 +36,19 @@ Alternatively, this state also listens for ircode record button press and raises
 ### state_ircode_record ###
 This state listens for remote IR controller signal and once it's been captured, it records it to EEPROM and signals TRIGGER_IRCODE_RECORDED
 
+Two codes are recorded consecutively:
+* AUDIO START code, and the STORED LED will be flashing once every second
+* AUDIO STOP code, and the STORED LED will be turned on permanently
+
 ### state_audio_start ###
 This state issues the following on enter: 
-* IRcode previosly recorded over 3.5mm jack
+* AUDIO START IRcode previosly recorded over 3.5mm jack
 
 Next, this state enters listening for audio equipment to enable 12V HIGH state over 3.5mm INPUT jack and signals TRIGGER_AUDIO_ENABLED when detected
 
 ### state_audio_enabled ###
 This state listens for the 12V LOW state over the 3.5mm INPUT jack and signals TRIGGER_AUDIO_DISABLED when detected
+* When TRIGGER_AUDIO_DISABLED was detected, system will send AUDIO STOP ir code
 
 
 ## Circuit and PCB ##

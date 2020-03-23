@@ -43,14 +43,21 @@ IRsend irsend;
 decode_results results;
 
 // Storage for the recorded code
-void storeCode(decode_results *results);
-void sendCode(int repeat);
+void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long codeValue);
+void storeCode(decode_results *results, int8_t &codeType, uint8_t &codeLen, unsigned long &codeValue);
 
-uint8_t codeType = -1; // The type of code
-unsigned long codeValue; // The code value if not raw
+
+uint8_t startAudioCodeType = 255; // The type of code
+uint8_t startAudioCodeLen; // The length of the code
+unsigned long startAudioCodeValue; // The code value if not raw
+
+uint8_t stopAudioCodeType = 255; // The type of code
+uint8_t stopAudioCodeLen; // The length of the code
+unsigned long stopAudioCodeValue; // The code value if not raw
+
+uint8_t toggle = 0; // The RC5/6 toggle state
 unsigned int rawCodes[RAWBUF]; // The durations if raw
-int codeLen; // The length of the code
-int toggle = 0; // The RC5/6 toggle state
+uint8_t irCodesAvailable = 0; //if ircodes were recorded
 
 //set up of the state machine
 void on_ircode_record_enter(); 
@@ -75,6 +82,8 @@ Fsm   fsm(&state_audio_sense);
 void setup()
 {
   Serial.begin(9600);
+  //Serial.println("\033[2J");
+  
   irrecv.enableIRIn(); // Start the receiver
   pinMode(RECORD_PIN, INPUT_PULLUP);
   pinMode(AUDIOSENSE_DIGITAL_PIN, INPUT_PULLUP);
@@ -86,13 +95,26 @@ void setup()
   
 
   //read ircode from EEPROM
-  codeValue = ( (unsigned long)EEPROM.read(0)) | ( (unsigned long)EEPROM.read(1)<<8) | ((unsigned long) EEPROM.read(2)<<16) | ( (unsigned long)EEPROM.read(3)<<24);
-  codeLen = EEPROM.read(4);
-  codeType = EEPROM.read(5);
-  if(codeType != -1) digitalWrite(STORED_LED_PIN, HIGH);
-  if(DEBUG_ENABLED) Serial.print("[INIT] reading stored code.. ");
-  if(DEBUG_ENABLED)Serial.println(codeValue, HEX);
-  if(DEBUG_ENABLED)Serial.println("[INIT] system initialised");
+  startAudioCodeValue = ( (unsigned long)EEPROM.read(0)) | ( (unsigned long)EEPROM.read(1)<<8) | ((unsigned long) EEPROM.read(2)<<16) | ( (unsigned long)EEPROM.read(3)<<24);
+  startAudioCodeLen = EEPROM.read(4);
+  startAudioCodeType = EEPROM.read(5);
+
+  stopAudioCodeValue = ( (unsigned long)EEPROM.read(6)) | ( (unsigned long)EEPROM.read(7)<<8) | ((unsigned long) EEPROM.read(8)<<16) | ( (unsigned long)EEPROM.read(9)<<24);
+  stopAudioCodeLen = EEPROM.read(10);
+  stopAudioCodeType = EEPROM.read(11);
+
+  //light "ircode stored" LED only if both start and stop codes were retrieved
+  if(startAudioCodeType != 255 && stopAudioCodeType != 255) { 
+    digitalWrite(STORED_LED_PIN, HIGH);
+    irCodesAvailable = 1;
+  }
+  
+  if(DEBUG_ENABLED) Serial.print("[INIT] reading stored code: [AUDIO START]  ");
+  if(DEBUG_ENABLED) Serial.print(startAudioCodeValue, HEX);
+  if(DEBUG_ENABLED) Serial.print(" , [AUDIO STOP]  ");
+  if(DEBUG_ENABLED) Serial.println(stopAudioCodeValue, HEX);
+  if(DEBUG_ENABLED && irCodesAvailable != 1) Serial.println("[INIT] ir codes are not properly recorded");
+  if(DEBUG_ENABLED) Serial.println("[INIT] system initialised");
 
   //initialise state machine
   fsm.add_transition(&state_audio_sense, &state_ircode_record, TRIGGER_IRCODE_RECORD, NULL);
@@ -161,27 +183,86 @@ void on_audio_sense_exit() {
 
 /**
 * enables IR receiver and turns recording LED on
+* it also resets codes recorded previously
 */
 void on_ircode_record_enter() {
-  irrecv.enableIRIn(); // Re-enable receiver
+  irrecv.enableIRIn(); // nable receiver
   digitalWrite(RECORD_LED_PIN, HIGH);
   digitalWrite(STORED_LED_PIN, LOW);
   if(DEBUG_ENABLED) Serial.println("[IRCODE RECORD] entering state and enabling receiver");
+
+  //reset all previosu codes
+  startAudioCodeValue = 0;
+  startAudioCodeType = -1;
+  stopAudioCodeValue = 0;
+  stopAudioCodeType = -1;
 }
 
 /**
-* waits until IR remote sends the IR code, records it and saves to EEPROM
+* waits until IR remote sends the IR code 
+* - records audio start code and saves to EEPROM and waits for recoding of the audio stop
+* - records audio stop code and saves to EEPROM
 * after this goes back to audio sense state
+* 
+* the STORED_LED will be flashing with 1HZ when only one code was recorded and will 
+* be turned on permanently when all codes were recorded
 */
 void on_ircode_record_loop() {
+
+  //if half of the codes were recorded - blink the stored led
+  if(startAudioCodeType != 255 && stopAudioCodeType == 255) blink(STORED_LED_PIN, 1, 500); 
+  
+  //read and decode the ircode
   if (irrecv.decode(&results)) {
-    if(DEBUG_ENABLED) Serial.println("[IRCODE RECORD] ircode detected");
-    digitalWrite(STATUS_LED_PIN, HIGH);
-    blink(STORED_LED_PIN, 1, 300); // blink recoded led to indicate recording
-    storeCode(&results);
-    digitalWrite(STATUS_LED_PIN, LOW);
-    fsm.trigger(TRIGGER_IRCODE_RECORDED);
-    
+    //record start audio code
+    if( startAudioCodeType == 255 ) {
+      if(DEBUG_ENABLED) Serial.println("[IRCODE RECORD][1/2] audio start ircode detected");
+      digitalWrite(STATUS_LED_PIN, HIGH);
+      blink(STORED_LED_PIN, 1, 300); // blink recoded led to indicate recording
+      storeCode(&results, startAudioCodeType, startAudioCodeLen, startAudioCodeValue);
+      digitalWrite(STATUS_LED_PIN, LOW);
+  
+      //write the to eeprom and report on serial
+      EEPROM.update(0, startAudioCodeValue);
+      EEPROM.update(1, startAudioCodeValue >> 8);
+      EEPROM.update(2, startAudioCodeValue >> 16);
+      EEPROM.update(3, startAudioCodeValue >> 24);
+      EEPROM.update(4, startAudioCodeLen);
+      EEPROM.update(5, startAudioCodeType);
+      if(DEBUG_ENABLED) Serial.print("[IRCODE RECORD][1/2] written to EEPROM value: ");
+      if(DEBUG_ENABLED) Serial.println(startAudioCodeValue, HEX);
+      if(DEBUG_ENABLED) Serial.print("[IRCODE RECORD][1/2] reading back from EEPROM: ");
+      if(DEBUG_ENABLED) startAudioCodeValue = ( (unsigned long)EEPROM.read(0)) | ( (unsigned long)EEPROM.read(1)<<8) | ((unsigned long) EEPROM.read(2)<<16) | ( (unsigned long)EEPROM.read(3)<<24);
+      if(DEBUG_ENABLED) Serial.println(startAudioCodeValue , HEX);
+      if(DEBUG_ENABLED) Serial.println("[IRCODE RECORD][1/2] waiting for audio stop code... ");
+
+      irrecv.resume(); //resume recording for the stop code
+    } 
+    //record stop audio code
+    else if( startAudioCodeType != 255 && stopAudioCodeType == 255 ) {
+      if(DEBUG_ENABLED) Serial.println("[IRCODE RECORD][2/2] audio stop ircode detected");
+      digitalWrite(STATUS_LED_PIN, HIGH);
+      blink(STORED_LED_PIN, 1, 300); // blink recoded led to indicate recording
+      storeCode(&results, stopAudioCodeType, stopAudioCodeLen, stopAudioCodeValue);
+      digitalWrite(STATUS_LED_PIN, LOW);
+  
+      //write the to eeprom and report on serial
+      EEPROM.update(6, stopAudioCodeValue);
+      EEPROM.update(7, stopAudioCodeValue >> 8);
+      EEPROM.update(8, stopAudioCodeValue >> 16);
+      EEPROM.update(9, stopAudioCodeValue >> 24);
+      EEPROM.update(10, stopAudioCodeLen);
+      EEPROM.update(11, stopAudioCodeType);
+      if(DEBUG_ENABLED) Serial.print("[IRCODE RECORD][2/2] written to EEPROM value: ");
+      if(DEBUG_ENABLED) Serial.println(stopAudioCodeValue, HEX);
+      if(DEBUG_ENABLED) Serial.print("[IRCODE RECORD][2/2] reading back from EEPROM: ");
+      if(DEBUG_ENABLED) stopAudioCodeValue = ( (unsigned long)EEPROM.read(6)) | ( (unsigned long)EEPROM.read(7)<<8) | ((unsigned long) EEPROM.read(8)<<16) | ( (unsigned long)EEPROM.read(9)<<24);
+      if(DEBUG_ENABLED) Serial.print(stopAudioCodeValue , HEX);
+      if(DEBUG_ENABLED) Serial.println();      
+
+      //trigger transition
+      fsm.trigger(TRIGGER_IRCODE_RECORDED);  //trigger transition only after audio stop code was recorded
+    }    
   }
 }
 
@@ -191,6 +272,7 @@ void on_ircode_record_loop() {
 void on_ircode_record_exit() {
   if(DEBUG_ENABLED) Serial.println("[IRCODE RECORD] exiting state and disabling receiver");
   digitalWrite(RECORD_LED_PIN, LOW);
+  digitalWrite(STORED_LED_PIN, HIGH);
 }
 
 // AUDIO START STATE
@@ -199,8 +281,10 @@ void on_ircode_record_exit() {
 * sends recorded IR code on enter
 */
 void on_audio_start_enter() {
-  Serial.println("[AUDIO START] entering state, sending IR signal and monitoring system startup");
-  sendCode(0); //send recorded or saved IR code without repeat
+  Serial.println("[AUDIO START] entering state, sending IR audio start signal and monitoring system startup");
+
+  //set up codes to send
+  sendCode(0, startAudioCodeType, startAudioCodeLen, startAudioCodeValue); //send recorded or saved IR code without repeat
 }
 
 /**
@@ -262,7 +346,7 @@ void on_audio_enabled_exit() {
 * Stores the code for later playback
 * Most of this code is just logging 
 */
-void storeCode(decode_results *results) {
+void storeCode(decode_results *results, uint8_t &codeType, uint8_t &codeLen, unsigned long &codeValue) {
   codeType = results->decode_type;
   uint8_t count = results->rawlen;
   if (codeType == UNKNOWN) {
@@ -313,23 +397,6 @@ void storeCode(decode_results *results) {
     if(DEBUG_ENABLED) Serial.println(results->value, HEX);
     codeValue = results->value;
     codeLen = results->bits;
-
-    //write the to eeprom and report on serial
-    EEPROM.update(0, codeValue);
-    EEPROM.update(1, codeValue >> 8);
-    EEPROM.update(2, codeValue >> 16);
-    EEPROM.update(3, codeValue >> 24);
-    EEPROM.update(4, codeLen);
-    EEPROM.update(5, codeType);
-    if(DEBUG_ENABLED) Serial.print("written to EEPROM value: ");
-    if(DEBUG_ENABLED) Serial.println(codeValue, HEX);
-    if(DEBUG_ENABLED) Serial.print("reading back from EEPROM: ");
-    if(DEBUG_ENABLED) codeValue = ( (unsigned long)EEPROM.read(0)) | ( (unsigned long)EEPROM.read(1)<<8) | ((unsigned long) EEPROM.read(2)<<16) | ( (unsigned long)EEPROM.read(3)<<24);
-    if(DEBUG_ENABLED) Serial.print(codeValue , HEX);
-    if(DEBUG_ENABLED) Serial.println();
-
-    digitalWrite(STORED_LED_PIN, HIGH); //light stored led to indicate that the code was recorded
-    
   }
 }
 
@@ -337,7 +404,7 @@ void storeCode(decode_results *results) {
 * sends the IR code recorded in the global variables: codeType, codeValue, codeLen
 * the IR code is sent using PWM pin and IR LED
 */
-void sendCode(int repeat) {
+void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long codeValue) {
   if (codeType == NEC) {
     if (repeat) {
       irsend.sendNEC(REPEAT, codeLen);
