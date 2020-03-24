@@ -1,6 +1,8 @@
 # audio-detector
 Audio detector that listens for an audio signal with the SPDIF TOSLINK or COAX receiver and controls audio components with the 12V trigger and IR signal
 
+All external circuits are galvanically isolated with optoisolators, including the audio digital serial signal.
+
 ## Arduino ##
 The board used is the Arduino Nano and the libraries:
 * State Machine was implemented with *arduino_fsm* state machine library https://github.com/jonblack/arduino-fsm
