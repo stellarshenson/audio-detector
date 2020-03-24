@@ -11,6 +11,7 @@
 #include <EEPROM.h>
 #include <Fsm.h>
 
+#define SEND_PIN 3
 #define RECV_PIN 2
 #define RECORD_PIN 12
 #define STATUS_LED_PIN 4
@@ -27,6 +28,9 @@
 #define TRIGGER_AUDIO_DISABLED 5
 
 #define DEBUG_ENABLED 1
+#define AUDIO_START_TIMEOUT 5000 //timeout for the audio start detection
+#define AUDIO_NOSIGNAL_TIMEOUT 60000 //timeout for the audio shutdown if no signal
+
 
 IRrecv irrecv(RECV_PIN);
 IRsend irsend;
@@ -62,6 +66,7 @@ void on_audio_start_exit();
 void on_audio_enabled_enter();
 void on_audio_enabled_loop();
 void on_audio_enabled_exit();
+void on_audio_start_timed_trans_audio_enabled();
 
 State state_audio_sense(on_audio_sense_enter, on_audio_sense_loop, on_audio_sense_exit);
 State state_ircode_record(on_ircode_record_enter, on_ircode_record_loop, on_ircode_record_exit);
@@ -74,7 +79,6 @@ void setup()
   Serial.begin(9600);
   //Serial.println("\033[2J");
   
-  irrecv.enableIRIn(); // Start the receiver
   pinMode(RECORD_PIN, INPUT_PULLUP);
   pinMode(AUDIOSENSE_DIGITAL_PIN, INPUT_PULLUP);
   pinMode(AUDIOTRIGGER_PIN, INPUT_PULLUP);
@@ -82,7 +86,6 @@ void setup()
   pinMode(STATUS_LED_PIN, OUTPUT);
   pinMode(STORED_LED_PIN, OUTPUT);
   pinMode(RECORD_LED_PIN, OUTPUT);
-  
 
   //read ircode from EEPROM
   startAudioCodeValue = ( (unsigned long)EEPROM.read(0)) | ( (unsigned long)EEPROM.read(1)<<8) | ((unsigned long) EEPROM.read(2)<<16) | ( (unsigned long)EEPROM.read(3)<<24);
@@ -112,13 +115,12 @@ void setup()
   fsm.add_transition(&state_audio_sense, &state_audio_start, TRIGGER_AUDIO_SENSED, NULL);
   fsm.add_transition(&state_audio_start, &state_audio_enabled, TRIGGER_AUDIO_ENABLED, NULL);
   fsm.add_transition(&state_audio_enabled, &state_audio_sense, TRIGGER_AUDIO_DISABLED, NULL);
-
-  //delay to charge pins
-  delay(50);
+  //fsm.add_timed_transition(&state_audio_start, &state_audio_enabled, AUDIO_START_TIMEOUT, &on_audio_start_timed_trans_audio_enabled);
 }
 
 void loop() {
-  fsm.run_machine();
+  fsm.run_machine(); //run state loops
+  delay(10);
 }
 
 
@@ -221,9 +223,6 @@ void on_ircode_record_loop() {
       EEPROM.update(5, startAudioCodeType);
       if(DEBUG_ENABLED) Serial.print("[IRCODE RECORD][1/2] written to EEPROM value: ");
       if(DEBUG_ENABLED) Serial.println(startAudioCodeValue, HEX);
-      if(DEBUG_ENABLED) Serial.print("[IRCODE RECORD][1/2] reading back from EEPROM: ");
-      if(DEBUG_ENABLED) startAudioCodeValue = ( (unsigned long)EEPROM.read(0)) | ( (unsigned long)EEPROM.read(1)<<8) | ((unsigned long) EEPROM.read(2)<<16) | ( (unsigned long)EEPROM.read(3)<<24);
-      if(DEBUG_ENABLED) Serial.println(startAudioCodeValue , HEX);
       if(DEBUG_ENABLED) Serial.println("[IRCODE RECORD][1/2] waiting for audio stop code... ");
 
       irrecv.resume(); //resume recording for the stop code
@@ -245,10 +244,6 @@ void on_ircode_record_loop() {
       EEPROM.update(11, stopAudioCodeType);
       if(DEBUG_ENABLED) Serial.print("[IRCODE RECORD][2/2] written to EEPROM value: ");
       if(DEBUG_ENABLED) Serial.println(stopAudioCodeValue, HEX);
-      if(DEBUG_ENABLED) Serial.print("[IRCODE RECORD][2/2] reading back from EEPROM: ");
-      if(DEBUG_ENABLED) stopAudioCodeValue = ( (unsigned long)EEPROM.read(6)) | ( (unsigned long)EEPROM.read(7)<<8) | ((unsigned long) EEPROM.read(8)<<16) | ( (unsigned long)EEPROM.read(9)<<24);
-      if(DEBUG_ENABLED) Serial.print(stopAudioCodeValue , HEX);
-      if(DEBUG_ENABLED) Serial.println();      
 
       //trigger transition
       fsm.trigger(TRIGGER_IRCODE_RECORDED);  //trigger transition only after audio stop code was recorded
@@ -298,6 +293,13 @@ void on_audio_start_loop() {
 */
 void on_audio_start_exit() {
   if(DEBUG_ENABLED) Serial.println("[AUDIO START] exiting state, audio is on");
+}
+
+/**
+* timed transition to audio enabled state after AUDIO_START_TIMEOUT (in miliseconds)
+*/
+void on_audio_start_timed_trans_audio_enabled() {
+  if(DEBUG_ENABLED) Serial.println("[AUDIO START] timeout when waiting for audio start, assuming audio was enabled");
 }
 
 // AUDIO ENABLED STATE
