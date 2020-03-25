@@ -148,10 +148,13 @@ void on_audio_sense_loop() {
   uint8_t recordButtonState = digitalRead(RECORD_PIN);
   uint8_t audioSenseState = digitalRead(AUDIOSENSE_DIGITAL_PIN);
 
+  //blink status 2hz to indicate listening for audio
+  blink(STATUS_LED_PIN, 1, 500);
+
   // button to enable recording ircode
   if (recordButtonState == LOW) {
     if(DEBUG_ENABLED) Serial.println("[AUDIO SENSE] ircode recording enabled...");
-    blink(STATUS_LED_PIN, 1, 300);
+    blink(STATUS_LED_PIN, 3, 300);
     fsm.trigger(TRIGGER_IRCODE_RECORD);
   } 
 
@@ -178,8 +181,10 @@ void on_audio_sense_exit() {
 * it also resets codes recorded previously
 */
 void on_ircode_record_enter() {
-  irrecv.enableIRIn(); // nable receiver
-  digitalWrite(RECORD_LED_PIN, HIGH);
+  // enable receiver
+  irrecv.enableIRIn(); 
+  
+  //reset stored codes to allow saving new ones
   digitalWrite(STORED_LED_PIN, LOW);
   if(DEBUG_ENABLED) Serial.println("[IRCODE RECORD] entering state and enabling receiver");
 
@@ -201,10 +206,11 @@ void on_ircode_record_enter() {
 */
 void on_ircode_record_loop() {
 
-  //if half of the codes were recorded - blink the stored led
-  if(startAudioCodeType != 255 && stopAudioCodeType == 255) blink(STORED_LED_PIN, 1, 500); 
+  //blink pattern for recording: twice for the first code, once for the second code
+  if(startAudioCodeType == 255 && stopAudioCodeType == 255) { blink(STORED_LED_PIN, 2, 500); delay(500);  }
+  if(startAudioCodeType != 255 && stopAudioCodeType == 255) { blink(STORED_LED_PIN, 1, 500); delay(500);  }
   
-  //read and decode the ircode
+  //read and decode the ircode, ircode was received with the interrupts
   if (irrecv.decode(&results)) {
     //record start audio code
     if( startAudioCodeType == 255 ) {
@@ -279,6 +285,9 @@ void on_audio_start_enter() {
 */
 void on_audio_start_loop() {
   uint8_t audioTriggerState = digitalRead(AUDIOTRIGGER_PIN);  //read the status of the external 12V trigger via optocoupler circuit connected to GND
+
+  //blink 1hz to indicate waiting for audio enabled
+  blink(AUDIOTRIGGER_LED_PIN, 1, 500);
 
   if (audioTriggerState == LOW) {
     if(DEBUG_ENABLED) Serial.println("[AUDIO START] external 12V trigger HIGH detected, audio amplifier is now enabled...");
