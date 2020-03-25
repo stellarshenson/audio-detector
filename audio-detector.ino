@@ -387,12 +387,6 @@ void storeCode(decode_results *results, uint8_t &codeType, uint8_t &codeLen, uns
     else if (codeType == SONY) {
       if(DEBUG_ENABLED) Serial.print("Received SONY: ");
     } 
-    else if (codeType == RC5) {
-      if(DEBUG_ENABLED) Serial.print("Received RC5: ");
-    } 
-    else if (codeType == RC6) {
-      if(DEBUG_ENABLED) Serial.print("Received RC6: ");
-    } 
     else {
       if(DEBUG_ENABLED) Serial.print("Unexpected");
       if(DEBUG_ENABLED) Serial.print(codeType, DEC);
@@ -424,26 +418,6 @@ void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long c
     irsend.sendSony(codeValue, codeLen);
     if(DEBUG_ENABLED) Serial.print("Sent Sony ");
     if(DEBUG_ENABLED) Serial.println(codeValue, HEX);
-  } 
- 
-  else if (codeType == RC5 || codeType == RC6) {
-    if (!repeat) {
-      // Flip the toggle bit for a new button press
-      toggle = 1 - toggle;
-    }
-    // Put the toggle bit into the code to send
-    codeValue = codeValue & ~(1 << (codeLen - 1));
-    codeValue = codeValue | (toggle << (codeLen - 1));
-    if (codeType == RC5) {
-      //Serial.print("Sent RC5 ");
-      //Serial.println(codeValue, HEX);
-      irsend.sendRC5(codeValue, codeLen);
-    } 
-    else {
-      irsend.sendRC6(codeValue, codeLen);
-      //Serial.print("Sent RC6 ");
-      //Serial.println(codeValue, HEX);
-    }
   } 
   else if (codeType == UNKNOWN /* i.e. raw */) {
     // Assume 38 KHz
