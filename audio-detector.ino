@@ -381,9 +381,9 @@ void on_audio_enabled_loop() {
   
   //initiates long idle for powersaving. 
   //blink once for normal trigger, twice for no trigger (timeout driven)
-  blink(STATUS_LED_PIN, 1, 250);
-  blink(STATUS_LED_PIN, 2, 250);
-  delay(1750);
+  if(audioTriggerAvailable) blink(STATUS_LED_PIN, 1, 250);
+  else blink(STATUS_LED_PIN, 2, 250);
+  delay(1000);
 }
 
 /**
