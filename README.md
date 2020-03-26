@@ -3,6 +3,24 @@ Audio detector that listens for an audio signal with the SPDIF TOSLINK or COAX r
 
 All external circuits are galvanically isolated with optoisolators, including the audio digital serial signal.
 
+
+## Installation and Use ##
+System was designed to read audio digital signal from any decoder circuit that outputs digital serial audio. Such as WM8805 (popular in the TOSLINK - Analog Audio converters)
+
+* Circuit connects to TOSLINK serial output (i.e. serial output from WM8805 receiver pin 16) via optocoupler on pin D8
+* IR phototransistor on pin D2
+* IR repeater on pin D3
+
+### Initial Setup ###
+When powered, system indicates if any pre-recorded IR codes were found. If not, you'd need to press "IRCODE RECORD" button (pin D12). It will initiate 2-stage recording, first AUDIO_START code and AUDIO_STOP code. System gives you the recording feedback with the RECORD LED: blinks twice for the first code and once for the second code. When codes were recorded - STORED LED will be lit. Once codes were recorded and stored - the system should start up every time with STORED LED lit.
+
+### Typical Use ###
+System enters audio monitoring state when initiated. When audio was detected, system sends AUDIO START code to turn the audio system on and monitors for 12V audio trigger. If trigger was not detected in 10s, system assumes that audio is enabled. 
+
+* Next, if 12V trigger is available, system waits for the line to go LOW and sends AUDIO STOP code and starts monitoring for the audio again back in the initial state
+* If 12V trigger is not available, system monitors audio signal and if audio signal is not available for 10min, sends AUDIO STOP and goes back to initial state 
+
+
 ## Arduino ##
 The board used is the Arduino Nano and the libraries:
 * State Machine was implemented with *arduino_fsm* state machine library https://github.com/jonblack/arduino-fsm
