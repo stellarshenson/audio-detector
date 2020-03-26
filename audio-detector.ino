@@ -4,8 +4,7 @@
  * State Machine was implemented with *arduino_fsm* state machine library https://github.com/jonblack/arduino-fsm
  * IR code recording and sending was implemented with *IRRemote* library https://github.com/z3t0/Arduino-IRremote
  * 
- * 
- * 
+ * Update on 26 Mar 2020: code has been tested and all works with NAD326bee amplifier and Yamaha WXAD-10 streamer
  * 
  * Copyright by Stellars Henson 2020
  */
