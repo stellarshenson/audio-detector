@@ -115,11 +115,11 @@ void setup()
     irCodesAvailable = 1;
   }
   
-  if(DEBUG_LEVEL == 2) Serial.print("[INIT] reading saved codes: AUDIO START: ");
+  if(DEBUG_LEVEL == 2) Serial.print("[INIT] Restoring IR codes, AUDIO START: ");
   if(DEBUG_LEVEL == 2) Serial.print(startAudioCodeValue, HEX);
   if(DEBUG_LEVEL == 2) Serial.print(" , AUDIO STOP: ");
   if(DEBUG_LEVEL == 2) Serial.println(stopAudioCodeValue, HEX);
-  if(DEBUG_LEVEL && irCodesAvailable != 1) Serial.println("[INIT] ir codes not available");
+  if(DEBUG_LEVEL && irCodesAvailable != 1) Serial.println("[INIT] IR codes not available");
 
   //initialise state machine
   fsm.add_transition(&state_audio_sense, &state_ircode_record, TRIGGER_IRCODE_RECORD, NULL);
@@ -127,8 +127,8 @@ void setup()
   fsm.add_transition(&state_audio_sense, &state_audio_start, TRIGGER_AUDIO_DETECTED, NULL);
   fsm.add_transition(&state_audio_start, &state_audio_enabled, TRIGGER_AUDIO_ENABLED, NULL);
   fsm.add_transition(&state_audio_enabled, &state_audio_sense, TRIGGER_AUDIO_DISABLED, NULL);
-  fsm.add_timed_transition(&state_audio_start, &state_audio_enabled, AUDIO_START_TIMEOUT, &on_audio_start_timed_trans_audio_enabled);
-  fsm.add_timed_transition(&state_audio_enabled, &state_audio_sense, AUDIO_STOP_TIMEOUT, &on_audio_enabled_timed_trans_audio_sense);
+  fsm.add_timed_transition(&state_audio_start, &state_audio_enabled, AUDIO_START_TIMEOUT, on_audio_start_timed_trans_audio_enabled);
+  fsm.add_timed_transition(&state_audio_enabled, &state_audio_sense, AUDIO_STOP_TIMEOUT, on_audio_enabled_timed_trans_audio_sense);
   
   
 }
@@ -291,7 +291,7 @@ void on_ircode_record_exit() {
 * sends recorded IR code on enter
 */
 void on_audio_start_enter() {
-  Serial.println("[AUDIO START] Start. Sending AUDIO START ircode and monitoring audio start");
+  Serial.println("[AUDIO START] Start. Sending AUDIO START IR code and monitoring");
 
   //initialise trigger sense
   audioTriggerAvailable = 0;
@@ -349,7 +349,7 @@ void on_audio_enabled_enter() {
   if(audioTriggerAvailable == 0) {
     audiosense_digital_detected = 0;
     enableInterrupt(AUDIOSENSE_DIGITAL_PIN, on_audiosense_digital_irq, CHANGE);
-    if(DEBUG_LEVEL == 2) Serial.println("[AUDIO ENABLED] Trigger not available. Enabling audio signal timer");
+    if(DEBUG_LEVEL == 2) { Serial.print("[AUDIO ENABLED] Trigger not available. Enabling audio signal timeout for "); Serial.print(AUDIO_STOP_TIMEOUT / 60000, DEC); Serial.println("min"); }
   }
 }
 
