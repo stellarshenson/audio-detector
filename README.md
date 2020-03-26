@@ -5,11 +5,12 @@ All external circuits are galvanically isolated with optoisolators, including th
 
 
 ## Installation and Use ##
-System was designed to read audio digital signal from any decoder circuit that outputs digital serial audio. Such as WM8805 (popular in the TOSLINK - Analog Audio converters)
+System was designed to read the audio signal from any decoder circuit that outputs digital serial audio. Such as WM8805 (popular in the TOSLINK - Analog Audio converters)
 
 * Circuit connects to TOSLINK serial output (i.e. serial output from WM8805 receiver pin 16) via optocoupler on pin D8
 * IR phototransistor on pin D2
 * IR repeater on pin D3
+* Optionally 12V audio trigger on D7
 
 ### Initial Setup ###
 When powered, system indicates if any pre-recorded IR codes were found. If not, you'd need to press "IRCODE RECORD" button (pin D12). It will initiate 2-stage recording, first AUDIO_START code and AUDIO_STOP code. System gives you the recording feedback with the RECORD LED: blinks twice for the first code and once for the second code. When codes were recorded - STORED LED will be lit. Once codes were recorded and stored - the system should start up every time with STORED LED lit.
