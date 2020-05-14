@@ -114,11 +114,11 @@ void setup()
     irCodesAvailable = 1;
   }
   
-  if(DEBUG_LEVEL == 2) Serial.print("[INIT] Restoring IR codes, AUDIO START: ");
+  if(DEBUG_LEVEL == 2) Serial.print(F("[INIT] Restoring IR codes, AUDIO START: "));
   if(DEBUG_LEVEL == 2) Serial.print(startAudioCodeValue, HEX);
-  if(DEBUG_LEVEL == 2) Serial.print(" , AUDIO STOP: ");
+  if(DEBUG_LEVEL == 2) Serial.print(F(" , AUDIO STOP: "));
   if(DEBUG_LEVEL == 2) Serial.println(stopAudioCodeValue, HEX);
-  if(DEBUG_LEVEL && irCodesAvailable != 1) Serial.println("[INIT] IR codes not available");
+  if(DEBUG_LEVEL && irCodesAvailable != 1) Serial.println(F("[INIT] IR codes not available"));
 
   //initialise state machine
   fsm.add_transition(&state_audio_sense, &state_ircode_record, TRIGGER_IRCODE_RECORD, NULL);
@@ -149,7 +149,7 @@ void loop() {
 * only announces the transition
 */
 void on_audio_sense_enter() {
-  if(DEBUG_LEVEL) Serial.println("[AUDIO SENSE] Start. Listening for audio and ircode record button");  
+  if(DEBUG_LEVEL) Serial.println(F("[AUDIO SENSE] Start. Listening for audio and ircode record button"));  
   
   //interrupt initialisation
   audiosense_digital_detected = 0;
@@ -171,7 +171,7 @@ void on_audio_sense_loop() {
   // button to enable recording ircode
   // driven by interrupts now on IRCODE_RECORD_PIN
   if (ircode_record_detected == 1) {
-    if(DEBUG_LEVEL) Serial.println("[AUDIO SENSE] IRCode recording detected");
+    if(DEBUG_LEVEL) Serial.println(F("[AUDIO SENSE] IRCode recording detected"));
     blink(STATUS_LED_PIN, 3, 300);
     fsm.trigger(TRIGGER_IRCODE_RECORD);
   } 
@@ -179,7 +179,7 @@ void on_audio_sense_loop() {
   // optocoupler connected to GND and AUDIOSENSE_PIN
   // this is detected with an interrupt on AUDIOSENSE_PIN
   if (audiosense_digital_detected == 1) {
-    if(DEBUG_LEVEL) Serial.println("[AUDIO SENSE] Audio signal detected");
+    if(DEBUG_LEVEL) Serial.println(F("[AUDIO SENSE] Audio signal detected"));
     blink(STATUS_LED_PIN, 3, 300);
     fsm.trigger(TRIGGER_AUDIO_DETECTED);
   }
@@ -189,7 +189,7 @@ void on_audio_sense_loop() {
 * signals exit from the state
 */
 void on_audio_sense_exit() {
-  if(DEBUG_LEVEL == 2) Serial.println("[AUDIO SENSE] Exit. Disabling audio signal detection");  
+  if(DEBUG_LEVEL == 2) Serial.println(F("[AUDIO SENSE] Exit. Disabling audio signal detection"));  
   disableInterrupt(AUDIOSENSE_DIGITAL_PIN);
   disableInterrupt(IRCODE_RECORD_PIN);
 }
@@ -208,13 +208,13 @@ void on_ircode_record_enter() {
   //reset stored codes to allow saving new ones
   digitalWrite(IRCODE_STORED_LED_PIN, LOW);
   digitalWrite(IRCODE_RECORD_LED_PIN, HIGH);
-  if(DEBUG_LEVEL) Serial.println("[IRCODE RECORD] Start.  Enabling IR receiver");
+  if(DEBUG_LEVEL) Serial.println(F("[IRCODE RECORD] Start.  Enabling IR receiver"));
 
   //reset all previosu codes
   startAudioCodeValue = 0;
-  startAudioCodeType = -1;
+  startAudioCodeType = 255;
   stopAudioCodeValue = 0;
-  stopAudioCodeType = -1;
+  stopAudioCodeType = 255;
 }
 
 /**
@@ -236,7 +236,7 @@ void on_ircode_record_loop() {
   if (irrecv.decode(&results)) {
     //record start audio code
     if( startAudioCodeType == 255 ) {
-      if(DEBUG_LEVEL) Serial.println("[IRCODE RECORD][1/2] - AUDIO START ircode detected");
+      if(DEBUG_LEVEL) Serial.println(F("[IRCODE RECORD][1/2] - AUDIO START ircode detected"));
       blink(STATUS_LED_PIN, 3, 300);
       storeCode(&results, startAudioCodeType, startAudioCodeLen, startAudioCodeValue);
       
@@ -247,15 +247,15 @@ void on_ircode_record_loop() {
       EEPROM.update(3, startAudioCodeValue >> 24);
       EEPROM.update(4, startAudioCodeLen);
       EEPROM.update(5, startAudioCodeType);
-      if(DEBUG_LEVEL == 2) Serial.print("[IRCODE RECORD][1/2] Saved value: ");
+      if(DEBUG_LEVEL == 2) Serial.print(F("[IRCODE RECORD][1/2] Saved value: "));
       if(DEBUG_LEVEL) Serial.println(startAudioCodeValue, HEX);
-      if(DEBUG_LEVEL == 2) Serial.println("[IRCODE RECORD][1/2] Waiting for AUDIO STOP ircode");
+      if(DEBUG_LEVEL == 2) Serial.println(F("[IRCODE RECORD][1/2] Waiting for AUDIO STOP ircode"));
 
       irrecv.resume(); //resume recording for the stop code
     } 
     //record stop audio code
     else if( startAudioCodeType != 255 && stopAudioCodeType == 255 ) {
-      if(DEBUG_LEVEL) Serial.println("[IRCODE RECORD][2/2] AUDIO STOP ircode detected");
+      if(DEBUG_LEVEL) Serial.println(F("[IRCODE RECORD][2/2] AUDIO STOP ircode detected"));
       blink(STATUS_LED_PIN, 3, 300);
       storeCode(&results, stopAudioCodeType, stopAudioCodeLen, stopAudioCodeValue);
   
@@ -266,7 +266,7 @@ void on_ircode_record_loop() {
       EEPROM.update(9, stopAudioCodeValue >> 24);
       EEPROM.update(10, stopAudioCodeLen);
       EEPROM.update(11, stopAudioCodeType);
-      if(DEBUG_LEVEL == 2) Serial.print("[IRCODE RECORD][2/2] Saved value: ");
+      if(DEBUG_LEVEL == 2) Serial.print(F("[IRCODE RECORD][2/2] Saved value: "));
       if(DEBUG_LEVEL) Serial.println(stopAudioCodeValue, HEX);
 
       //trigger transition
@@ -279,7 +279,7 @@ void on_ircode_record_loop() {
 * announces exit from ircode recording state and turns off recording LED
 */
 void on_ircode_record_exit() {
-  if(DEBUG_LEVEL == 2) Serial.println("[IRCODE RECORD] Exit. Disabling receiver");
+  if(DEBUG_LEVEL == 2) Serial.println(F("[IRCODE RECORD] Exit. Disabling receiver"));
   digitalWrite(IRCODE_RECORD_LED_PIN, LOW);
   digitalWrite(IRCODE_STORED_LED_PIN, HIGH);
 }
@@ -290,7 +290,7 @@ void on_ircode_record_exit() {
 * sends recorded IR code on enter
 */
 void on_audio_start_enter() {
-  Serial.println("[AUDIO START] Start. Sending AUDIO START IR code and monitoring");
+  Serial.println(F("[AUDIO START] Start. Sending AUDIO START IR code and monitoring"));
 
   //initialise trigger sense
   audioTriggerAvailable = 0;
@@ -313,7 +313,7 @@ void on_audio_start_loop() {
   //detecting status of the 12v trigger line 
   //it stays this way, we are not trying to detect the signal, just the state
   if (audioTriggerState == LOW) {
-    if(DEBUG_LEVEL) Serial.println("[AUDIO START] Audio trigger detected");
+    if(DEBUG_LEVEL) Serial.println(F("[AUDIO START] Audio trigger detected"));
     blink(STATUS_LED_PIN, 3, 250); // blink status led that the audio is enabled
     digitalWrite(AUDIOTRIGGER_LED_PIN, HIGH); //indicate that the audio is enabled
     audioTriggerAvailable = 1; //12V audio trigger is available, no need for timeout
@@ -332,7 +332,7 @@ void on_audio_start_exit() {
 * timed transition to audio enabled state after AUDIO_START_TIMEOUT (in miliseconds)
 */
 void on_audio_start_timed_trans_audio_enabled() {
-  if(DEBUG_LEVEL) Serial.println("[AUDIO START] Timeout. Trigger not available");
+  if(DEBUG_LEVEL) Serial.println(F("[AUDIO START] Timeout. Trigger not available"));
   audioTriggerAvailable = 0; //12V audio trigger is not available
 }
 
@@ -342,13 +342,16 @@ void on_audio_start_timed_trans_audio_enabled() {
 * announce enter audio enabled state
 */
 void on_audio_enabled_enter() {
-  if(DEBUG_LEVEL) Serial.println("[AUDIO ENABLED] Start. Monitoring for standby");
+  if(DEBUG_LEVEL) Serial.println(F("[AUDIO ENABLED] Start. Monitoring for standby"));
   
   //if audiotrigger is not available, enable interrupts to listen to audio signal
   if(audioTriggerAvailable == 0) {
     audiosense_digital_detected = 0;
     enableInterrupt(AUDIOSENSE_DIGITAL_PIN, on_audiosense_digital_irq, CHANGE);
-    if(DEBUG_LEVEL == 2) { Serial.print("[AUDIO ENABLED] Trigger not available. Enabling audio signal timeout for "); Serial.print(AUDIO_STOP_TIMEOUT / 60000, DEC); Serial.println("min"); }
+    if(DEBUG_LEVEL == 2) { 
+      Serial.print(F("[AUDIO ENABLED] Trigger not available. Enabling audio signal timeout for ")); 
+      Serial.print(AUDIO_STOP_TIMEOUT / 60000, DEC); 
+      Serial.println(F("min")); }
   }
 }
 
@@ -367,13 +370,13 @@ void on_audio_enabled_loop() {
     //if audiotrigger is available we await the 12V trigger to go LOW 
     //AUDIOTRIGGER_PIN goes HIGH inverted by the optocoupler
     if (audioTriggerState == HIGH) {
-      if(DEBUG_LEVEL) Serial.println("[AUDIO ENABLED] Standby trigger detected");
+      if(DEBUG_LEVEL) Serial.println(F("[AUDIO ENABLED] Standby trigger detected"));
       blink(STATUS_LED_PIN, 3, 300); // blink status led that the audio is enabled
       fsm.trigger(TRIGGER_AUDIO_DISABLED); //initiate state transition
     }
   } else if(audioTriggerAvailable == 0 && audiosense_digital_detected == 1) {
     //if signal was detected - reset timer and the signal
-    if(DEBUG_LEVEL == 2) Serial.println("[AUDIO ENABLED] Audio detected. Timer reset");
+    if(DEBUG_LEVEL == 2) Serial.println(F("[AUDIO ENABLED] Audio detected. Timer reset"));
     fsm.reset_timed_transition(&state_audio_sense);
     audiosense_digital_detected = 0;
   }
@@ -389,14 +392,14 @@ void on_audio_enabled_loop() {
 * announce leaving the audio enabled state
 */
 void on_audio_enabled_exit() {
-  if(DEBUG_LEVEL == 2) Serial.println("[AUDIO ENABLED] Exit. Sending AUDIO STOP ircode");
+  if(DEBUG_LEVEL == 2) Serial.println(F("[AUDIO ENABLED] Exit. Sending AUDIO STOP ircode"));
 
   //send AUDIO STOP IR signal
   sendCode(0, stopAudioCodeType, stopAudioCodeLen, stopAudioCodeValue); //send recorded or saved IR code without repeat
   digitalWrite(AUDIOTRIGGER_LED_PIN, LOW); //indicate that the audio is disabled
 
   //disable audio sense interrupt
-  if(DEBUG_LEVEL == 2 && audioTriggerAvailable == 0) Serial.println("[AUDIO ENABLED] Disabling shutdown timer");
+  if(DEBUG_LEVEL == 2 && audioTriggerAvailable == 0) Serial.println(F("[AUDIO ENABLED] Disabling shutdown timer"));
   disableInterrupt(AUDIOSENSE_DIGITAL_PIN);
 }
 
@@ -405,7 +408,7 @@ void on_audio_enabled_exit() {
 * timed transition to audio sense
 */
 void on_audio_enabled_timed_trans_audio_sense() {
-  if(DEBUG_LEVEL) Serial.println("[AUDIO ENABLED] Timeout. No audio signal");
+  if(DEBUG_LEVEL) Serial.println(F("[AUDIO ENABLED] Timeout. No audio signal"));
 }
 
 
@@ -422,7 +425,7 @@ void storeCode(decode_results *results, uint8_t &codeType, uint8_t &codeLen, uns
   codeType = results->decode_type;
   uint8_t count = results->rawlen;
   if (codeType == UNKNOWN) {
-    if(DEBUG_LEVEL) Serial.println("Received unknown code, saving as raw");
+    if(DEBUG_LEVEL) Serial.println(F("Received unknown code, saving as raw"));
     codeLen = results->rawlen - 1;
     // To store raw codes:
     // Drop first value (gap)
@@ -445,18 +448,18 @@ void storeCode(decode_results *results, uint8_t &codeType, uint8_t &codeLen, uns
   }
   else {
     if (codeType == NEC) {
-      if(DEBUG_LEVEL == 2) Serial.print("Received NEC: ");
+      if(DEBUG_LEVEL == 2) Serial.print(F("Received NEC: "));
       if (results->value == REPEAT) {
         // Don't record a NEC repeat value as that's useless.
-        if(DEBUG_LEVEL == 2) Serial.println("repeat; ignoring.");
+        if(DEBUG_LEVEL == 2) Serial.println(F("repeat; ignoring."));
         return;
       }
     } 
     else if (codeType == SONY) {
-      if(DEBUG_LEVEL == 2) Serial.print("Received SONY: ");
+      if(DEBUG_LEVEL == 2) Serial.print(F("Received SONY: "));
     } 
     else {
-      if(DEBUG_LEVEL) Serial.print("Unexpected");
+      if(DEBUG_LEVEL) Serial.print(F("Unexpected"));
       if(DEBUG_LEVEL) Serial.print(codeType, DEC);
       if(DEBUG_LEVEL) Serial.println("");
     }
@@ -475,23 +478,23 @@ void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long c
   if (codeType == NEC) {
     if (repeat) {
       irsend.sendNEC(REPEAT, codeLen);
-      if(DEBUG_LEVEL) Serial.println("Sent NEC repeat");
+      if(DEBUG_LEVEL) Serial.println(F("Sent NEC repeat"));
     } 
     else {
       irsend.sendNEC(codeValue, codeLen);
-      if(DEBUG_LEVEL) Serial.print("Sent NEC ");
+      if(DEBUG_LEVEL) Serial.print(F("Sent NEC "));
       if(DEBUG_LEVEL) Serial.println(codeValue, HEX);
     }
   } 
   else if (codeType == SONY) {
     irsend.sendSony(codeValue, codeLen);
-    if(DEBUG_LEVEL) Serial.print("Sent Sony ");
+    if(DEBUG_LEVEL) Serial.print(F("Sent Sony "));
     if(DEBUG_LEVEL) Serial.println(codeValue, HEX);
   } 
   else if (codeType == UNKNOWN /* i.e. raw */) {
     // Assume 38 KHz
     irsend.sendRaw(rawCodes, codeLen, 38);
-    if(DEBUG_LEVEL) Serial.println("Sent raw");
+    if(DEBUG_LEVEL) Serial.println(F("Sent raw"));
   }
 }
 
