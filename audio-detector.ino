@@ -31,7 +31,7 @@
 #define TRIGGER_AUDIO_DISABLED 5
 
 #define DEBUG_LEVEL 2 //0 - debug off, 1 - essential messages, 2 - full diagnostics
-#define AUDIO_START_TIMEOUT 10000 //timeout for the audio start detection
+#define AUDIO_START_TIMEOUT 3000 //timeout for the audio start detection
 #define AUDIO_STOP_TIMEOUT 10*60000 //timeout for the audio shutdown if no signal
 
 //IR receiver setup
