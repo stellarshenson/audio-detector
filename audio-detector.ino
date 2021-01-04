@@ -53,7 +53,7 @@ uint8_t stopAudioCodeLen; // The length of the code
 uint32_t stopAudioCodeValue; // The code value if not raw
 
 uint8_t toggle = 0; // The RC5/6 toggle state
-uint16_t rawCodes[RAWBUF]; // The durations if raw
+uint16_t rawCodes[RAW_BUFFER_LENGTH]; // The durations if raw
 uint8_t irCodesAvailable = 0; //if ircodes were recorded
 
 uint8_t audioTriggerAvailable = 0; //if 12V trigger is available. Audio enable timeout sets this to 0, detection of the 12V trigger sets this to 1. We can also detect this with an audio jack (it has detect input feature)
@@ -434,12 +434,12 @@ void storeCode(decode_results *results, uint8_t &codeType, uint8_t &codeLen, uns
     for (int i = 1; i <= codeLen; i++) {
       if (i % 2) {
         // Mark
-        rawCodes[i - 1] = results->rawbuf[i]*USECPERTICK - MARK_EXCESS;
+        rawCodes[i - 1] = results->rawbuf[i]*MICROS_PER_TICK - MARK_EXCESS_MICROS;
         if(DEBUG_LEVEL) Serial.print(" m");
       } 
       else {
         // Space
-        rawCodes[i - 1] = results->rawbuf[i]*USECPERTICK + MARK_EXCESS;
+        rawCodes[i - 1] = results->rawbuf[i]*MICROS_PER_TICK - MARK_EXCESS_MICROS;
         if(DEBUG_LEVEL) Serial.print(" s");
       }
       if(DEBUG_LEVEL) Serial.print(rawCodes[i - 1], DEC);
