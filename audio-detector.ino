@@ -32,7 +32,8 @@
 
 #define DEBUG_LEVEL 2 //0 - debug off, 1 - essential messages, 2 - full diagnostics
 #define AUDIO_START_TIMEOUT 3000 //timeout for the audio start detection
-#define AUDIO_STOP_TIMEOUT 10*60000 //timeout for the audio shutdown if no signal
+#define AUDIO_STOP_TIMEOUT 10*60000 //timeout for the audio shutdown if no signal (10min)
+#define AUDIO_ENABLED_SENSE_INTERVAL 1* 60000 //timeout for checking audio signal in AUDIO_ENABLED (1min)
 
 //IR receiver setup
 IRrecv irrecv(RECV_PIN);
@@ -63,6 +64,7 @@ void on_audiosense_digital_irq();
 void on_ircode_record_irq();
 volatile uint8_t audiosense_digital_detected = 0;
 volatile uint8_t ircode_record_detected = 0;
+uint32_t audiosense_millis = 0; //used to measure time before consecutive audio signal checks in AUDIO_ENABLED state
 
 
 
@@ -87,8 +89,7 @@ State state_audio_start(on_audio_start_enter, on_audio_start_loop, on_audio_star
 State state_audio_enabled(on_audio_enabled_enter, on_audio_enabled_loop, on_audio_enabled_exit);
 Fsm   fsm(&state_audio_sense);
 
-void setup()
-{
+void setup(){
   Serial.begin(9600);
   
   pinMode(IRCODE_RECORD_PIN, INPUT_PULLUP);
@@ -151,8 +152,8 @@ void loop() {
 void on_audio_sense_enter() {
   if(DEBUG_LEVEL) Serial.println(F("[AUDIO SENSE] Start. Listening for audio and ircode record button"));  
   
-  //interrupt initialisation
-  audiosense_digital_detected = 0;
+  //interrupt initialisation. check initial audio signal status
+  audiosense_digital_detected = digitalRead(AUDIOSENSE_DIGITAL_PIN) != HIGH;
   ircode_record_detected = 0;
   enableInterrupt(AUDIOSENSE_DIGITAL_PIN, on_audiosense_digital_irq, CHANGE);
   enableInterrupt(IRCODE_RECORD_PIN, on_ircode_record_irq, CHANGE);
@@ -346,12 +347,16 @@ void on_audio_enabled_enter() {
   
   //if audiotrigger is not available, enable interrupts to listen to audio signal
   if(audioTriggerAvailable == 0) {
-    audiosense_digital_detected = 0;
+    audiosense_millis = millis();
+    audiosense_digital_detected = digitalRead(AUDIOSENSE_DIGITAL_PIN) != HIGH;
     enableInterrupt(AUDIOSENSE_DIGITAL_PIN, on_audiosense_digital_irq, CHANGE);
+    
+    
     if(DEBUG_LEVEL == 2) { 
       Serial.print(F("[AUDIO ENABLED] Trigger not available. Enabling audio signal timeout for ")); 
       Serial.print(AUDIO_STOP_TIMEOUT / 60000, DEC); 
-      Serial.println(F("min")); }
+      Serial.println(F("min")); 
+    }
   }
 }
 
@@ -374,18 +379,18 @@ void on_audio_enabled_loop() {
       blink(STATUS_LED_PIN, 3, 300); // blink status led that the audio is enabled
       fsm.trigger(TRIGGER_AUDIO_DISABLED); //initiate state transition
     }
-  } else if(audioTriggerAvailable == 0 && audiosense_digital_detected == 1) {
+  //when 12V trigger is not present, check for audio signal every AUDIOSENSE_ENABLED_SENSE_INTERVAL
+  } else if( audioTriggerAvailable == 0 && audiosense_digital_detected == 1 && ((audiosense_millis + AUDIO_ENABLED_SENSE_INTERVAL <= millis())) || audiosense_millis > millis() ) {
     //if signal was detected - reset timer and the signal
-    if(DEBUG_LEVEL == 2) Serial.println(F("[AUDIO ENABLED] Audio detected. Timer reset"));
+    if(DEBUG_LEVEL == 2) Serial.println(F("[AUDIO ENABLED] Audio detected. Timeout reset"));
     fsm.reset_timed_transition(&state_audio_sense);
-    audiosense_digital_detected = 0;
+    audiosense_millis = millis(); //update sense timer
   }
   
   //initiates long idle for powersaving. 
   //blink once for normal trigger, twice for no trigger (timeout driven)
   if(audioTriggerAvailable) blink(STATUS_LED_PIN, 1, 250);
   else blink(STATUS_LED_PIN, 2, 250);
-  delay(1000);
 }
 
 /**
@@ -502,7 +507,12 @@ void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long c
  * interrupt handler for audio signal detection
 */
 void on_audiosense_digital_irq() {
-  audiosense_digital_detected = 1;
+  //audiosense_digital_detected = 1;
+  audiosense_digital_detected = digitalRead(AUDIOSENSE_DIGITAL_PIN) != HIGH;
+  if(DEBUG_LEVEL) { 
+    Serial.print("[IRQ] Audio Sense Pin Change Detected: ");
+    Serial.println(audiosense_digital_detected);
+  }
 }
 
 /**
