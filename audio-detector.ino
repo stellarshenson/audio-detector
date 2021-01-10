@@ -4,6 +4,29 @@
  * State Machine was implemented with *arduino_fsm* state machine library https://github.com/jonblack/arduino-fsm
  * IR code recording and sending was implemented with *IRRemote* library https://github.com/z3t0/Arduino-IRremote
  * 
+ *                    +-----+
+ *       +------------| USB |------------+
+ *       |            +-----+            |
+ *  B5   | [ ]D13/SCK        MISO/D12[ ] |   B4
+ *       | [ ]3.3V           MOSI/D11[ ]~|   B3
+ *       | [ ]V.ref     ___    SS/D10[ ]~|   B2
+ *  C0   | [ ]A0       / N \       D9[ ]~|   B1
+ *  C1   | [ ]A1      /  A  \      D8[ ] |   B0
+ *  C2   | [ ]A2      \  N  /      D7[ ] |   D7
+ *  C3   | [ ]A3       \_0_/       D6[ ]~|   D6
+ *  C4   | [ ]A4/SDA               D5[ ]~|   D5
+ *  C5   | [ ]A5/SCL               D4[ ] |   D4
+ *       | [ ]A6              INT1/D3[ ]~|   D3
+ *       | [ ]A7              INT0/D2[ ] |   D2
+ *       | [ ]5V                  GND[ ] |     
+ *  C6   | [ ]RST                 RST[ ] |   C6
+ *       | [ ]GND   5V MOSI GND   TX1[ ] |   D0
+ *       | [ ]Vin   [ ] [ ] [ ]   RX1[ ] |   D1
+ *       |          [ ] [ ] [ ]          |
+ *       |          MISO SCK RST         |
+ *       | NANO-V3                       |
+ *       +-------------------------------+
+ *       
  * Update on 26 Mar 2020: code has been tested and all works with NAD326bee amplifier and Yamaha WXAD-10 streamer
  * 
  * Copyright by Stellars Henson 2020
@@ -14,21 +37,25 @@
 #include <Fsm.h>
 #include <EnableInterrupt.h>
 #include <jled.h>
+#include <Smoothed.h>
 
 #define SEND_PIN 3
 #define RECV_PIN 2
 #define IRCODE_RECORD_BTN_PIN 12
-#define STATUS_LED_PIN 9
+#define AUDIOSENSE_LEARN_BTN_PIN 5 //button to get audio detector to learn signal level to activate audio with
+#define STATUS_LED_PIN 9 //single LED
 #define OUTPUT_AUDIO_ENABLED_PIN 4 //set to high when audio is enabled 
 #define AUDIOSENSE_DIGITAL_PIN 8 //output from the detector circuit. MK1 has it as a SPDIF decoder serial output
 #define AUDIOTRIGGER_PIN 7 //connected to the optocoupler that detects the 12V trigger from the amp
-
+#define AUDIOSENSE_ADC_PIN A1  //sense audio with ADC. Vref should be 3v3
 
 #define TRIGGER_IRCODE_RECORD 1
 #define TRIGGER_IRCODE_RECORDED 2
 #define TRIGGER_AUDIO_DETECTED 3
 #define TRIGGER_AUDIO_ENABLED 4
 #define TRIGGER_AUDIO_DISABLED 5
+#define TRIGGER_AUDIO_LEARN 6
+#define TRIGGER_AUDIO_LEARNED 7
 
 #define DEBUG_LEVEL 2 //0 - debug off, 1 - essential messages, 2 - full diagnostics
 #define AUDIO_START_TIMEOUT 3000 //timeout for the audio start detection
@@ -40,9 +67,13 @@ IRrecv irrecv(RECV_PIN);
 IRsend irsend;
 decode_results results;
 
+//ADC smoothing setup
+Smoothed <float> audioSenseADC_linear; 
+Smoothed <float> audioSenseADC_exponential;
+
 //nonblocking LED setup
 auto led_sense_noconfig = JLed(STATUS_LED_PIN).Breathe(1000).Forever().DelayAfter(1000);
-auto led_sense_configok = JLed(STATUS_LED_PIN).Breathe(3000).Forever().DelayAfter(3000);
+auto led_sense_configok = JLed(STATUS_LED_PIN).Breathe(2000).Forever().DelayAfter(2000);
 auto led_audio_enabled = JLed(STATUS_LED_PIN).On();
 auto led_audio_disabled = JLed(STATUS_LED_PIN).Off();
 auto led_ir_recording_1 = JLed(STATUS_LED_PIN).Blink(100,100).Forever();
@@ -82,6 +113,9 @@ uint32_t audiosense_millis = 0; //used to measure time before consecutive audio 
 void on_ircode_record_enter(); 
 void on_ircode_record_loop();
 void on_ircode_record_exit();
+void on_audio_learn_enter(); 
+void on_audio_learn_loop();
+void on_audio_learn_exit();
 void on_audio_sense_enter();
 void on_audio_sense_loop();
 void on_audio_sense_exit();
@@ -95,6 +129,7 @@ void on_audio_start_timed_trans_audio_enabled();
 
 State state_audio_sense(on_audio_sense_enter, on_audio_sense_loop, on_audio_sense_exit);
 State state_ircode_record(on_ircode_record_enter, on_ircode_record_loop, on_ircode_record_exit);
+State state_audio_learn(on_audio_learn_enter, on_audio_learn_loop, on_audio_learn_exit);
 State state_audio_start(on_audio_start_enter, on_audio_start_loop, on_audio_start_exit);
 State state_audio_enabled(on_audio_enabled_enter, on_audio_enabled_loop, on_audio_enabled_exit);
 Fsm   fsm(&state_audio_sense);
@@ -131,12 +166,17 @@ void setup(){
   //initialise state machine
   fsm.add_transition(&state_audio_sense, &state_ircode_record, TRIGGER_IRCODE_RECORD, NULL);
   fsm.add_transition(&state_ircode_record, &state_audio_sense, TRIGGER_IRCODE_RECORDED, NULL);
+  fsm.add_transition(&state_audio_sense, &state_audio_learn, TRIGGER_AUDIO_LEARN, NULL);
+  fsm.add_transition(&state_audio_learn, &state_audio_sense, TRIGGER_AUDIO_LEARNED, NULL);
   fsm.add_transition(&state_audio_sense, &state_audio_start, TRIGGER_AUDIO_DETECTED, NULL);
   fsm.add_transition(&state_audio_start, &state_audio_enabled, TRIGGER_AUDIO_ENABLED, NULL);
   fsm.add_transition(&state_audio_enabled, &state_audio_sense, TRIGGER_AUDIO_DISABLED, NULL);
   fsm.add_timed_transition(&state_audio_start, &state_audio_enabled, AUDIO_START_TIMEOUT, on_audio_start_timed_trans_audio_enabled);
   fsm.add_timed_transition(&state_audio_enabled, &state_audio_sense, AUDIO_STOP_TIMEOUT, on_audio_enabled_timed_trans_audio_sense);
-  
+
+  //initialise audiosense adc smoothing
+  audioSenseADC_linear.begin(SMOOTHED_AVERAGE, 10);
+  audioSenseADC_exponential.begin(SMOOTHED_EXPONENTIAL, 10);
   
 }
 
@@ -287,6 +327,17 @@ void on_ircode_record_exit() {
   irCodesAvailable = 1;
 }
 
+// AUDIO LEARN STATE
+
+void on_audio_learn_enter() {
+}
+
+void on_audio_learn_loop() {
+}
+
+void on_audio_learn_exit(){
+}
+
 // AUDIO START STATE
 
 /**
@@ -425,6 +476,34 @@ void on_audio_enabled_timed_trans_audio_sense() {
   digitalWrite(OUTPUT_AUDIO_ENABLED_PIN, LOW);
 }
 
+//===================== UTILS ============================
+
+/**
+* performs sensing of the audio signal with ADC
+*/
+boolean sense_audio() {
+  float _senseValue = analogRead(AUDIOSENSE_ADC_PIN);
+  float _linearValue;
+  float _exponentialValue;
+  
+  audioSenseADC_linear.add(_senseValue);
+  audioSenseADC_exponential.add(_senseValue);
+
+  _linearValue = audioSenseADC_linear.get();
+  _exponentialValue = audioSenseADC_exponential.get();
+
+  if(DEBUG_LEVEL > 1) {
+    // Output the smoothed values to the serial stream. Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
+    Serial.print("[ADC] current value: ");
+    Serial.print(_senseValue); 
+    Serial.print(", linear value: "); 
+    Serial.print(_linearValue); 
+    Serial.print(", exponential value: "); 
+    Serial.println(_exponentialValue);
+  }
+  
+  return false;
+}
 
 /** 
 * Stores the code for later playback
