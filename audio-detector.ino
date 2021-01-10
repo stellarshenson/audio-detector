@@ -42,7 +42,7 @@
 #define SEND_PIN 3
 #define RECV_PIN 2
 #define IRCODE_RECORD_BTN_PIN 12
-#define AUDIOSENSE_LEARN_BTN_PIN 5 //button to get audio detector to learn signal level to activate audio with
+#define AUDIOSENSE_LEARN_BTN_PIN 8 //button to get audio detector to learn signal level to activate audio with
 #define STATUS_LED_PIN 9 //single LED
 #define OUTPUT_AUDIO_ENABLED_PIN 4 //set to high when audio is enabled 
 #define AUDIOSENSE_DIGITAL_PIN 8 //output from the detector circuit. MK1 has it as a SPDIF decoder serial output
@@ -61,25 +61,23 @@
 #define AUDIO_START_TIMEOUT 3000 //timeout for the audio start detection
 #define AUDIO_STOP_TIMEOUT 10* 60000 //timeout for the audio shutdown if no signal (10min)
 #define AUDIO_ENABLED_SENSE_INTERVAL 1* 60000 //timeout for checking audio signal in AUDIO_ENABLED (1min)
+#define AUDIOSENSE_INIT_THRESHOLD 300
+#define AUDIOSENSE_LEARN_SAMPLES 150
 
 //IR receiver setup
 IRrecv irrecv(RECV_PIN);
 IRsend irsend;
 decode_results results;
 
-//ADC smoothing setup
-Smoothed <float> audioSenseADC_linear; 
-Smoothed <float> audioSenseADC_exponential;
-
 //nonblocking LED setup
 auto led_sense_noconfig = JLed(STATUS_LED_PIN).Breathe(1000).Forever().DelayAfter(1000);
 auto led_sense_configok = JLed(STATUS_LED_PIN).Breathe(2000).Forever().DelayAfter(2000);
 auto led_audio_enabled = JLed(STATUS_LED_PIN).On();
 auto led_audio_disabled = JLed(STATUS_LED_PIN).Off();
+auto led_audio_learning = JLed(STATUS_LED_PIN).Blink(750,250).Forever();
 auto led_ir_recording_1 = JLed(STATUS_LED_PIN).Blink(100,100).Forever();
 auto led_ir_recording_2 = JLed(STATUS_LED_PIN).Blink(500,500).Forever();
 JLed led_active = led_sense_noconfig;
-
 
 // Storage for the recorded code
 void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long codeValue);
@@ -101,12 +99,18 @@ uint8_t irCodesAvailable = 0; //if ircodes were recorded
 uint8_t audioTriggerAvailable = 0; //if 12V trigger is available. Audio enable timeout sets this to 0, detection of the 12V trigger sets this to 1. We can also detect this with an audio jack (it has detect input feature)
 
 //interrupt driver
-void on_audiosense_digital_irq();
+void on_audiosense_learn_irq();
 void on_ircode_record_irq();
-volatile uint8_t audiosense_digital_detected = 0;
 volatile uint8_t ircode_record_detected = 0;
+volatile uint8_t audiosense_learn_detected = 0;
+
 uint32_t audiosense_millis = 0; //used to measure time before consecutive audio signal checks in AUDIO_ENABLED state
 
+//ADC smoothing setup 
+Smoothed <float> audioSenseADC;
+Smoothed <float> audioSenseADC_learn;
+uint16_t audioSenseLearnCounter = 0;
+uint16_t audioSenseThreshold = AUDIOSENSE_INIT_THRESHOLD;
 
 
 //FSM - set up of the state machine
@@ -138,10 +142,11 @@ void setup(){
   Serial.begin(9600);
   
   pinMode(IRCODE_RECORD_BTN_PIN, INPUT_PULLUP);
-  pinMode(AUDIOSENSE_DIGITAL_PIN, INPUT_PULLUP);
+  pinMode(AUDIOSENSE_LEARN_BTN_PIN, INPUT_PULLUP);
   pinMode(AUDIOTRIGGER_PIN, INPUT_PULLUP);
   pinMode(STATUS_LED_PIN, OUTPUT);
   pinMode (OUTPUT_AUDIO_ENABLED_PIN, OUTPUT);
+  pinMode(AUDIOSENSE_ADC_PIN, INPUT);
   digitalWrite(OUTPUT_AUDIO_ENABLED_PIN, LOW);
 
   //read ircode from EEPROM
@@ -153,6 +158,9 @@ void setup(){
   stopAudioCodeLen = EEPROM.read(10);
   stopAudioCodeType = EEPROM.read(11);
 
+  //recover audio sense threshold for ADC
+  audioSenseThreshold = ( (uint16_t)EEPROM.read(12)) | ( (uint16_t)EEPROM.read(13)<<8);
+
   //initiate status led to indicate if config ok or not available
   if(startAudioCodeType != 255 && stopAudioCodeType != 255) irCodesAvailable = 1;
   else irCodesAvailable = 0;
@@ -160,7 +168,9 @@ void setup(){
   if(DEBUG_LEVEL == 2) Serial.print(F("[INIT] Restoring IR codes, AUDIO START: "));
   if(DEBUG_LEVEL == 2) Serial.print(startAudioCodeValue, HEX);
   if(DEBUG_LEVEL == 2) Serial.print(F(" , AUDIO STOP: "));
-  if(DEBUG_LEVEL == 2) Serial.println(stopAudioCodeValue, HEX);
+  if(DEBUG_LEVEL == 2) Serial.print(stopAudioCodeValue, HEX);
+  if(DEBUG_LEVEL == 2) Serial.print(F(" , SENSE THRESHOLD: "));
+  if(DEBUG_LEVEL == 2) Serial.println(audioSenseThreshold, DEC);
   if(DEBUG_LEVEL && irCodesAvailable != 1) Serial.println(F("[INIT] IR codes not available"));
 
   //initialise state machine
@@ -171,13 +181,12 @@ void setup(){
   fsm.add_transition(&state_audio_sense, &state_audio_start, TRIGGER_AUDIO_DETECTED, NULL);
   fsm.add_transition(&state_audio_start, &state_audio_enabled, TRIGGER_AUDIO_ENABLED, NULL);
   fsm.add_transition(&state_audio_enabled, &state_audio_sense, TRIGGER_AUDIO_DISABLED, NULL);
+  fsm.add_transition(&state_audio_enabled, &state_audio_learn, TRIGGER_AUDIO_LEARN, NULL);
   fsm.add_timed_transition(&state_audio_start, &state_audio_enabled, AUDIO_START_TIMEOUT, on_audio_start_timed_trans_audio_enabled);
   fsm.add_timed_transition(&state_audio_enabled, &state_audio_sense, AUDIO_STOP_TIMEOUT, on_audio_enabled_timed_trans_audio_sense);
 
   //initialise audiosense adc smoothing
-  audioSenseADC_linear.begin(SMOOTHED_AVERAGE, 10);
-  audioSenseADC_exponential.begin(SMOOTHED_EXPONENTIAL, 10);
-  
+  audioSenseADC.begin(SMOOTHED_EXPONENTIAL, AUDIOSENSE_LEARN_SAMPLES);
 }
 
 void loop() {
@@ -191,7 +200,7 @@ void loop() {
 // *******************************
 
 
-// STATE_AUDIO_SENSE
+// STATE_AUDIOSENSE
 
 /**
 * only announces the transition
@@ -200,9 +209,9 @@ void on_audio_sense_enter() {
   if(DEBUG_LEVEL) Serial.println(F("[AUDIO SENSE] Start. Listening for audio and ircode record button"));  
   
   //interrupt initialisation. check initial audio signal status
-  audiosense_digital_detected = digitalRead(AUDIOSENSE_DIGITAL_PIN) != HIGH;
+  audiosense_learn_detected = 0;
   ircode_record_detected = 0;
-  enableInterrupt(AUDIOSENSE_DIGITAL_PIN, on_audiosense_digital_irq, CHANGE);
+  enableInterrupt(AUDIOSENSE_LEARN_BTN_PIN, on_audiosense_learn_irq, CHANGE);
   enableInterrupt(IRCODE_RECORD_BTN_PIN, on_ircode_record_irq, CHANGE);
 
   //light LED for status and configuration
@@ -217,6 +226,8 @@ void on_audio_sense_enter() {
 * audio and ircode button detection is driven by interrupts
 */
 void on_audio_sense_loop() {
+  boolean _audio_sensed = senseAudio();
+  
   // button to enable recording ircode
   // driven by interrupts now on IRCODE_RECORD_BTN_PIN
   if (ircode_record_detected == 1) {
@@ -224,9 +235,15 @@ void on_audio_sense_loop() {
     fsm.trigger(TRIGGER_IRCODE_RECORD);
   } 
 
-  // optocoupler connected to GND and AUDIOSENSE_PIN
-  // this is detected with an interrupt on AUDIOSENSE_PIN
-  if (audiosense_digital_detected == 1 ) {
+  // button to enable learning audio threshold
+  // driven by interrupts now on AUDIOSENSE_LEARN_BTN_PIN
+  if (audiosense_learn_detected == 1) {
+    if(DEBUG_LEVEL) Serial.println(F("[AUDIO SENSE] Audiosense learning detected"));
+    fsm.trigger(TRIGGER_AUDIO_LEARN);
+  } 
+
+  // this is detected with ADC pin AUDIOSENSE_ADC_PIN
+  if (_audio_sensed) {
     if(DEBUG_LEVEL) Serial.println(F("[AUDIO SENSE] Audio signal detected"));
     fsm.trigger(TRIGGER_AUDIO_DETECTED);
   }
@@ -237,7 +254,7 @@ void on_audio_sense_loop() {
 */
 void on_audio_sense_exit() {
   if(DEBUG_LEVEL == 2) Serial.println(F("[AUDIO SENSE] Exit. Disabling audio signal detection"));  
-  disableInterrupt(AUDIOSENSE_DIGITAL_PIN);
+  disableInterrupt(AUDIOSENSE_LEARN_BTN_PIN);
   disableInterrupt(IRCODE_RECORD_BTN_PIN);
 }
 
@@ -329,13 +346,47 @@ void on_ircode_record_exit() {
 
 // AUDIO LEARN STATE
 
+/**
+* reset learning and indicate with LED that learningg started
+*/
 void on_audio_learn_enter() {
+  if(DEBUG_LEVEL == 2) Serial.println(F("[AUDIOSENSE LEARN] Entering state. Resetting threshold and counter"));
+  led_active = led_audio_learning;
+  audioSenseLearnCounter = 0;
+  audioSenseThreshold = 0;
+
+  audioSenseADC_learn.begin(SMOOTHED_EXPONENTIAL, AUDIOSENSE_LEARN_SAMPLES);
 }
 
+/**
+* start smooting the audio over the next SAMPLES and record result to EEPROM
+*/
 void on_audio_learn_loop() {
+
+  if(audioSenseLearnCounter++ < AUDIOSENSE_LEARN_SAMPLES){
+     float _value = analogRead(AUDIOSENSE_ADC_PIN);
+     audioSenseADC_learn.add(_value);
+     delay(10);
+  } else {
+    audioSenseThreshold = audioSenseADC_learn.get();
+
+    //save to EEPROM
+    EEPROM.update(12, audioSenseThreshold);
+    EEPROM.update(13, audioSenseThreshold >> 8);
+       
+    //trigger transition
+    fsm.trigger(TRIGGER_AUDIO_LEARNED);   
+  }
 }
 
+/**
+* announce recorded value and exit
+*/
 void on_audio_learn_exit(){
+  if(DEBUG_LEVEL == 2) { 
+     Serial.print(F("[AUDIOSENSE LEARN] Exit. New threshold set to: "));
+     Serial.println(audioSenseThreshold, DEC);
+  }
 }
 
 // AUDIO START STATE
@@ -396,8 +447,6 @@ void on_audio_enabled_enter() {
   //if audiotrigger is not available, enable interrupts to listen to audio signal
   if(audioTriggerAvailable == 0) {
     audiosense_millis = millis();
-    audiosense_digital_detected = digitalRead(AUDIOSENSE_DIGITAL_PIN) != HIGH;
-    enableInterrupt(AUDIOSENSE_DIGITAL_PIN, on_audiosense_digital_irq, CHANGE);
         
     if(DEBUG_LEVEL == 2) { 
       Serial.print(F("[AUDIO ENABLED] Trigger not available. Enabling audio signal timeout for ")); 
@@ -411,6 +460,10 @@ void on_audio_enabled_enter() {
 
   //enable output pin to indicate that audio is on
   digitalWrite(OUTPUT_AUDIO_ENABLED_PIN, HIGH);
+
+  //enable sensing btn for learning
+  audiosense_learn_detected = 0;
+  enableInterrupt(AUDIOSENSE_LEARN_BTN_PIN, on_audiosense_learn_irq, CHANGE);
 }
 
 /**
@@ -420,6 +473,8 @@ void on_audio_enabled_enter() {
 * if 12V trigger is not available, system refreshes  the timer with the audio signal detection
 */
 void on_audio_enabled_loop() {
+  boolean _audio_sensed = senseAudio();
+  
   //listen for the trigger only if available
   if(audioTriggerAvailable == 1) {
     //read 12V audio trigger from the optocoupler connected to GND (inverts the signal)
@@ -433,13 +488,20 @@ void on_audio_enabled_loop() {
       fsm.trigger(TRIGGER_AUDIO_DISABLED); //initiate state transition
     }
   //when 12V trigger is not present, check for audio signal every AUDIOSENSE_ENABLED_SENSE_INTERVAL
-  } else if( audioTriggerAvailable == 0 && audiosense_digital_detected == 1 && ((audiosense_millis + AUDIO_ENABLED_SENSE_INTERVAL <= millis())) || audiosense_millis > millis() ) {
+  } else if( audioTriggerAvailable == 0 &&  _audio_sensed && ((audiosense_millis + AUDIO_ENABLED_SENSE_INTERVAL <= millis())) || audiosense_millis > millis() ) {
     //if signal was detected - reset timer and the signal
     if(DEBUG_LEVEL == 2) Serial.println(F("[AUDIO ENABLED] Audio detected. Timeout reset"));
     
     fsm.reset_timed_transition(&state_audio_sense);
     audiosense_millis = millis(); //update sense timer
   }
+
+   // button to enable learning audio threshold
+  // driven by interrupts now on AUDIOSENSE_LEARN_BTN_PIN
+  if (audiosense_learn_detected == 1) {
+    if(DEBUG_LEVEL) Serial.println(F("[AUDIO SENSE] Audiosense learning detected"));
+    fsm.trigger(TRIGGER_AUDIO_LEARN);
+  } 
 }
 
 /**
@@ -481,28 +543,24 @@ void on_audio_enabled_timed_trans_audio_sense() {
 /**
 * performs sensing of the audio signal with ADC
 */
-boolean sense_audio() {
+boolean senseAudio() {
   float _senseValue = analogRead(AUDIOSENSE_ADC_PIN);
-  float _linearValue;
-  float _exponentialValue;
+  float _smoothedValue = 0;
   
-  audioSenseADC_linear.add(_senseValue);
-  audioSenseADC_exponential.add(_senseValue);
+  audioSenseADC.add(_senseValue);
 
-  _linearValue = audioSenseADC_linear.get();
-  _exponentialValue = audioSenseADC_exponential.get();
+  _smoothedValue = audioSenseADC.get();
 
   if(DEBUG_LEVEL > 1) {
     // Output the smoothed values to the serial stream. Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
     Serial.print("[ADC] current value: ");
     Serial.print(_senseValue); 
-    Serial.print(", linear value: "); 
-    Serial.print(_linearValue); 
-    Serial.print(", exponential value: "); 
-    Serial.println(_exponentialValue);
+    Serial.print(", smoothed value: "); 
+    Serial.println(_smoothedValue);
+    delay(10);
   }
   
-  return false;
+  return _smoothedValue > audioSenseThreshold;
 }
 
 /** 
@@ -592,15 +650,10 @@ void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long c
 }
 
 /**
- * interrupt handler for audio signal detection
+ * interrupt handler for audio learn detection
 */
-void on_audiosense_digital_irq() {
-  //audiosense_digital_detected = 1;
-  audiosense_digital_detected = digitalRead(AUDIOSENSE_DIGITAL_PIN) != HIGH;
-  if(DEBUG_LEVEL) { 
-    Serial.print("[IRQ] Audio Sense Pin Change Detected: ");
-    Serial.println(audiosense_digital_detected);
-  }
+void on_audiosense_learn_irq() {
+  audiosense_learn_detected = 1;
 }
 
 /**
