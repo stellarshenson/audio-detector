@@ -62,8 +62,8 @@
 #define AUDIO_STANDBY_TIMEOUT 10* 60000 //timeout for the audio shutdown if no signal (10min)
 #define AUDIO_ENABLED_SENSE_INTERVAL 1* 60000 //timeout for checking audio signal in AUDIO_ENABLED (1min)
 #define AUDIOSENSE_INIT_THRESHOLD 300
-#define AUDIOSENSE_LEARN_SAMPLES 100
-#define AUDIOSENSE_ADC_INTERVAL 50
+#define AUDIOSENSE_AVG_SAMPLES 150
+#define AUDIOSENSE_ADC_INTERVAL 75
 
 //IR receiver setup
 IRrecv irrecv(INPUT_IRCODE_RECV_PIN);
@@ -195,7 +195,7 @@ void setup() {
   fsm.add_timed_transition(&state_audio_enabled, &state_audio_sense, AUDIO_STANDBY_TIMEOUT, on_audio_enabled_timed_trans_audio_sense);
 
   //initialise audiosense adc smoothing
-  audioSenseADC.begin(SMOOTHED_EXPONENTIAL, AUDIOSENSE_LEARN_SAMPLES);
+  audioSenseADC.begin(SMOOTHED_EXPONENTIAL, AUDIOSENSE_AVG_SAMPLES);
 }
 
 void loop() {
@@ -360,7 +360,7 @@ void on_audio_learn_enter() {
   audioSenseLearnCounter = 0;
   audioSenseThreshold = 0;
 
-  audioSenseADC_learn.begin(SMOOTHED_EXPONENTIAL, AUDIOSENSE_LEARN_SAMPLES);
+  audioSenseADC_learn.begin(SMOOTHED_EXPONENTIAL, AUDIOSENSE_AVG_SAMPLES);
 }
 
 /**
@@ -370,7 +370,7 @@ void on_audio_learn_loop() {
   static uint32_t _lastSenseMillis = millis();
 
   if (millis() > _lastSenseMillis + AUDIOSENSE_ADC_INTERVAL) {
-    if (audioSenseLearnCounter++ < AUDIOSENSE_LEARN_SAMPLES) {
+    if (audioSenseLearnCounter++ < AUDIOSENSE_AVG_SAMPLES) {
       float _value = analogRead(INPUT_AUDIOSENSE_ADC_PIN);
       audioSenseADC_learn.add(_value);
       delay(10);
@@ -561,22 +561,21 @@ void on_audio_enabled_timed_trans_audio_sense() {
 boolean senseAudio() {
   static uint32_t _lastSenseMillis = millis();
   float _senseValue = analogRead(INPUT_AUDIOSENSE_ADC_PIN);
-  float _smoothedValue = 0;
+  float _smoothedValue = audioSenseADC.get();
 
   if (millis() > _lastSenseMillis + AUDIOSENSE_ADC_INTERVAL) {
     audioSenseADC.add(_senseValue);
     _lastSenseMillis = millis();
-
-    if (DEBUG_LEVEL > 3) {
-      // Output the smoothed values to the serial stream. Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
-      Serial.print("[ADC] minimum: 0, maximum: 1024, current_value: ");
-      Serial.print(_senseValue);
-      Serial.print(", smoothed_value: ");
-      Serial.println(_smoothedValue);
-    }
   }
 
-  _smoothedValue = audioSenseADC.get();
+  if (DEBUG_LEVEL > 1) {
+    // Output the smoothed values to the serial stream. Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
+    Serial.print("[ADC] minimum: 0, maximum: 1024, current_value: ");
+    Serial.print(_senseValue);
+    Serial.print(", smoothed_value: ");
+    Serial.println(_smoothedValue);
+  }
+
   return _smoothedValue > audioSenseThreshold;
 }
 
@@ -694,13 +693,13 @@ void on_button_irq() {
   }
 }
 
-  /**
-    blinks pin with a led #cycles number of times, each within the duration
-  */
-  static void  blink( const byte pin, const byte cycles, const unsigned int duration) {
-    uint8_t initialState = digitalRead(pin);
-    for (unsigned short i = 0; i < cycles * 2; i++) {
-      digitalWrite(pin, ~(i + initialState) & 1);
-      delay(duration / 2);
-    }
+/**
+  blinks pin with a led #cycles number of times, each within the duration
+*/
+static void  blink( const byte pin, const byte cycles, const unsigned int duration) {
+  uint8_t initialState = digitalRead(pin);
+  for (unsigned short i = 0; i < cycles * 2; i++) {
+    digitalWrite(pin, ~(i + initialState) & 1);
+    delay(duration / 2);
   }
+}
