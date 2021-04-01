@@ -16,10 +16,10 @@ System was designed to read the audio signal from any decoder circuit that outpu
 When powered, system indicates if any pre-recorded IR codes were found. If not, you'd need to press "IRCODE RECORD" button (pin D12). It will initiate 2-stage recording, first AUDIO_START code and AUDIO_STOP code. System gives you the recording feedback with the RECORD LED: blinks twice for the first code and once for the second code. When codes were recorded - STORED LED will be lit. Once codes were recorded and stored - the system should start up every time with STORED LED lit.
 
 ### Typical Use ###
-System enters audio monitoring state when initiated. When audio was detected, system sends AUDIO START code to turn the audio system on and monitors for 12V audio trigger. If trigger was not detected in 10s, system assumes that audio is enabled. 
+System enters audio monitoring state when initiated. When audio was detected, system sends AUDIO START code to turn the audio system on and monitors for 12V audio trigger. If trigger was not detected in 10s, system assumes that audio is enabled.
 
 * Next, if 12V trigger is available, system waits for the line to go LOW and sends AUDIO STOP code and starts monitoring for the audio again back in the initial state
-* If 12V trigger is not available, system monitors audio signal and if audio signal is not available for 10min, sends AUDIO STOP and goes back to initial state 
+* If 12V trigger is not available, system monitors audio signal and if audio signal is not available for 10min, sends AUDIO STOP and goes back to initial state
 
 
 ## Arduino ##
@@ -62,7 +62,7 @@ Two codes are recorded consecutively:
 * AUDIO STOP code, and the STORED LED will be turned on permanently
 
 ### state_audio_start ###
-This state issues the following on enter: 
+This state issues the following on enter:
 * AUDIO START IRcode previosly recorded over 3.5mm jack
 
 Next, this state enters listening for audio equipment to enable 12V HIGH state over 3.5mm INPUT jack and signals TRIGGER_AUDIO_ENABLED when detected
@@ -73,5 +73,6 @@ This state listens for the 12V LOW state over the 3.5mm INPUT jack and signals T
 
 
 ## Circuit and PCB ##
-![breadboard](https://github.com/stellarshenson/audio-detector/blob/master/audio-detector_bb.jpg)
-
+![schematics](https://github.com/stellarshenson/audio-detector/blob/master/misc/audio-detector_schematics.png)
+![top](https://github.com/stellarshenson/audio-detector/blob/master/misc/audio-detector_top_600dpi.png)
+![bottom](https://github.com/stellarshenson/audio-detector/blob/master/misc/audio-detector_bottom_600dpi.png)
