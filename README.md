@@ -76,3 +76,4 @@ This state listens for the 12V LOW state over the 3.5mm INPUT jack and signals T
 ![schematics](https://github.com/stellarshenson/audio-detector/blob/master/misc/audio-detector_schematics.png)
 ![top](https://github.com/stellarshenson/audio-detector/blob/master/misc/audio-detector_top_600dpi.png)
 ![bottom](https://github.com/stellarshenson/audio-detector/blob/master/misc/audio-detector_bottom_600dpi.png)
+![3d](https://github.com/stellarshenson/audio-detector/blob/master/misc/audio-detector_3d.png)
