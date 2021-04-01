@@ -62,8 +62,8 @@
 #define AUDIO_STANDBY_TIMEOUT 10* 60000 //timeout for the audio shutdown if no signal (10min)
 #define AUDIO_ENABLED_SENSE_INTERVAL 1* 60000 //timeout for checking audio signal in AUDIO_ENABLED (1min)
 #define AUDIOSENSE_INIT_THRESHOLD 300
-#define AUDIOSENSE_AVG_SAMPLES 150
-#define AUDIOSENSE_ADC_INTERVAL 75
+#define AUDIOSENSE_AVG_SAMPLES 100
+#define AUDIOSENSE_ADC_INTERVAL 25
 
 //IR receiver setup
 IRrecv irrecv(INPUT_IRCODE_RECV_PIN);
@@ -105,7 +105,8 @@ uint8_t autoStandbyEnabled = 0; //enabled by the configuration pin INPUT_CONFIG_
 #define BUTTON_SINGLEPRESS 1
 #define HOLDPRESS_TIMEOUT 600
 volatile uint8_t button_detected = 0;
-void on_button_irq();
+void on_button_irq(); //irq driver
+void on_button_update(); //updated in the loop button sensing for single and long press
 
 uint32_t audiosense_millis = 0; //used to measure time before consecutive audio signal checks in AUDIO_ENABLED state
 
@@ -200,7 +201,8 @@ void setup() {
 
 void loop() {
   fsm.run_machine(); //run state loops
-  led_active.Update();
+  led_active.Update(); //run led driver
+  on_button_update(); //run button sensing
 }
 
 
@@ -360,7 +362,7 @@ void on_audio_learn_enter() {
   audioSenseLearnCounter = 0;
   audioSenseThreshold = 0;
 
-  audioSenseADC_learn.begin(SMOOTHED_EXPONENTIAL, AUDIOSENSE_AVG_SAMPLES);
+  audioSenseADC_learn.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
 }
 
 /**
@@ -372,8 +374,16 @@ void on_audio_learn_loop() {
   if (millis() > _lastSenseMillis + AUDIOSENSE_ADC_INTERVAL) {
     if (audioSenseLearnCounter++ < AUDIOSENSE_AVG_SAMPLES) {
       float _value = analogRead(INPUT_AUDIOSENSE_ADC_PIN);
+      
+      //reset last sense millis
+      _lastSenseMillis = millis();
       audioSenseADC_learn.add(_value);
-      delay(10);
+      if(DEBUG_LEVEL > 0) { 
+        Serial.print("[Learn] sensed_value: ");
+        Serial.print(_value);
+        Serial.print(", average_value:  ");
+        Serial.println(audioSenseADC_learn.get());
+      }
     } else {
       audioSenseThreshold = audioSenseADC_learn.get();
 
@@ -573,7 +583,9 @@ boolean senseAudio() {
     Serial.print("[ADC] minimum: 0, maximum: 1024, current_value: ");
     Serial.print(_senseValue);
     Serial.print(", smoothed_value: ");
-    Serial.println(_smoothedValue);
+    Serial.print(_smoothedValue);
+    Serial.print(", threshold_value: ");
+    Serial.println(audioSenseThreshold);
   }
 
   return _smoothedValue > audioSenseThreshold;
@@ -669,6 +681,13 @@ void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long c
    interrupt handler for audio learn detection
 */
 void on_button_irq() {
+  on_button_update();
+}
+
+/*
+drives updare of the button status for short and long press
+*/
+void on_button_update() {
   static uint32_t _lastSenseMillis = millis(); //set timer
   static float _lastSenseValue = HIGH;  //start with button released
 
@@ -676,21 +695,31 @@ void on_button_irq() {
   float _senseValue = digitalRead(INPUT_BUTTON_PIN);
 
 
-  //if press detected
+  //if single press detected
   if (_lastSenseValue == HIGH && _senseValue == LOW) {
     _lastSenseValue = LOW;
     _lastSenseMillis = millis();
   }
-  //if release detected
+  //if release detected and no holdpress
   else if (_lastSenseValue == LOW && _senseValue == HIGH) {
-    if (_lastSenseMillis + HOLDPRESS_TIMEOUT < millis()) {
-      button_detected = BUTTON_HOLDPRESS;
-      if (DEBUG_LEVEL) Serial.println(F("[IRQ] Holdpress detected"));
-    } else {
+    if (_lastSenseMillis + HOLDPRESS_TIMEOUT < millis() && button_detected == BUTTON_HOLDPRESS) {
+      if (DEBUG_LEVEL) Serial.println(F("[IRQ] Holdpress ended"));
+      button_detected = 0;
+      _lastSenseValue = _senseValue;
+      }
+    else {
       button_detected = BUTTON_SINGLEPRESS;
+      _lastSenseValue = _senseValue;
       if (DEBUG_LEVEL) Serial.println(F("[IRQ] Singlepress detected"));
     }
-  }
+  } 
+  //if no release but holdpress
+  else if (_lastSenseValue == LOW && _senseValue == LOW) {
+    if (_lastSenseMillis + HOLDPRESS_TIMEOUT < millis() && button_detected != BUTTON_HOLDPRESS) {
+      button_detected = BUTTON_HOLDPRESS;
+      if (DEBUG_LEVEL) Serial.println(F("[IRQ] Holdpress detected"));
+    }
+  } 
 }
 
 /**
