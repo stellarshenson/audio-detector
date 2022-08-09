@@ -28,7 +28,7 @@
         +-------------------------------+
 
   Update on 26 Mar 2020: code has been tested and all works with NAD326bee amplifier and Yamaha WXAD-10 streamer
-
+  
   Copyright by Stellars Henson 2020
 */
 
@@ -39,7 +39,7 @@
 #include <jled.h>
 #include <Smoothed.h>
 
-#define OUTPUT_SEND_PIN 3 //pin to send the IR code with
+#define OUTPUT_SEND_PIN 3 //pin to send the IR code with via optocoupler
 #define INPUT_IRCODE_RECV_PIN 2 //pin connected to IR phototransistor
 #define INPUT_BUTTON_PIN 8 //learn signal level with single press, learn IR codes on holdpress
 #define OUTPUT_STATUS_LED_PIN 9 //single LED
@@ -138,9 +138,9 @@ void on_audio_start_timed_trans_audio_enabled();
 State state_audio_sense(on_audio_sense_enter, on_audio_sense_loop, on_audio_sense_exit); //idle state, waiting for audio signal
 State state_ircode_record(on_ircode_record_enter, on_ircode_record_loop, on_ircode_record_exit); //state where IR codes are recorded for start and stop audio
 State state_audio_learn(on_audio_learn_enter, on_audio_learn_loop, on_audio_learn_exit); //state where threshold for audio detection is set
-State state_audio_start(on_audio_start_enter, on_audio_start_loop, on_audio_start_exit); //state where audio was detected and amplifier is switched on
-State state_audio_enabled(on_audio_enabled_enter, on_audio_enabled_loop, on_audio_enabled_exit); //idle state where audio is enabled
-Fsm   fsm(&state_audio_sense);
+State state_audio_start(on_audio_start_enter, on_audio_start_loop, on_audio_start_exit); //state where audio was detected and amplifier is switched on. this state waits for 12v standby-on or timeout (if not 12v trigger available)
+State state_audio_enabled(on_audio_enabled_enter, on_audio_enabled_loop, on_audio_enabled_exit); //idle state where audio is enabled. keeps checking if the audio is still on
+Fsm   fsm(&state_audio_sense); //set up the bootstrap state to start with
 
 void setup() {
   Serial.begin(9600);
@@ -684,9 +684,9 @@ void on_button_irq() {
   on_button_update();
 }
 
-/*
-drives updare of the button status for short and long press
-*/
+/**
+ * drives update of the button status for short and long press
+ */
 void on_button_update() {
   static uint32_t _lastSenseMillis = millis(); //set timer
   static float _lastSenseValue = HIGH;  //start with button released
