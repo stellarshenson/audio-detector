@@ -1,7 +1,5 @@
-# audio-detector
-Audio detector that listens for an audio signal with the SPDIF TOSLINK or COAX receiver and controls audio components with the 12V trigger and IR signal
-
-All external circuits are galvanically isolated with optoisolators, including the audio digital serial signal.
+# Audio Trigger / Detector
+This device listens for an audio signal at the RCA input and in response turns the audio equipment on using IR remote code or a relay. It als turns the audio equipment off when there was no audio signal detected for longer than 10min
 
 
 ## Installation and Use ##
@@ -13,7 +11,7 @@ System was designed to read the audio signal from any decoder circuit that outpu
 * Optionally 12V audio trigger on D7
 
 ### Initial Setup ###
-When powered, system indicates if any pre-recorded IR codes were found. If not, you'd need to press "IRCODE RECORD" button (pin D12). It will initiate 2-stage recording, first AUDIO_START code and AUDIO_STOP code. System gives you the recording feedback with the RECORD LED: blinks twice for the first code and once for the second code. When codes were recorded - STORED LED will be lit. Once codes were recorded and stored - the system should start up every time with STORED LED lit.
+When powered, system indicates if any pre-recorded IR codes were found. If not, you'd need to press "IRCODE RECORD" button (pin D12). It will initiate 2-stage recording, first AUDIO\_START code and AUDIO\_STOP code. System gives you the recording feedback with the RECORD LED: blinks twice for the first code and once for the second code. When codes were recorded - STORED LED will be lit. Once codes were recorded and stored - the system should start up every time with STORED LED lit.
 
 ### Typical Use ###
 System enters audio monitoring state when initiated. When audio was detected, system sends AUDIO START code to turn the audio system on and monitors for 12V audio trigger. If trigger was not detected in 10s, system assumes that audio is enabled.
