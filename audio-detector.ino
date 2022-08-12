@@ -576,16 +576,17 @@ boolean senseAudio() {
   if (millis() > _lastSenseMillis + AUDIOSENSE_ADC_INTERVAL) {
     audioSenseADC.add(_senseValue);
     _lastSenseMillis = millis();
-  }
 
-  if (DEBUG_LEVEL > 1) {
-    // Output the smoothed values to the serial stream. Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
-    Serial.print("[ADC] minimum: 0, maximum: 1024, current_value: ");
-    Serial.print(_senseValue);
-    Serial.print(", smoothed_value: ");
-    Serial.print(_smoothedValue);
-    Serial.print(", threshold_value: ");
-    Serial.println(audioSenseThreshold);
+    // Output the smoothed values to the serial stream. 
+    // Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
+    if (DEBUG_LEVEL > 1) {
+	Serial.print("[ADC] minimum: 0, maximum: 1024, current_value: ");
+	Serial.print(_senseValue);
+	Serial.print(", smoothed_value: ");
+	Serial.print(_smoothedValue);
+	Serial.print(", threshold_value: ");
+	Serial.println(audioSenseThreshold);
+    }
   }
 
   return _smoothedValue > audioSenseThreshold;
