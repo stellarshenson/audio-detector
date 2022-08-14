@@ -11,7 +11,7 @@ System was designed to read the audio signal from any decoder circuit that outpu
 * Optionally 12V audio trigger on D7
 
 ### Initial Setup ###
-When powered, system indicates if any pre-recorded IR codes were found. If not, you'd need to press "IRCODE RECORD" button (pin D12). It will initiate 2-stage recording, first AUDIO\_START code and AUDIO\_STOP code. System gives you the recording feedback with the RECORD LED: blinks twice for the first code and once for the second code. When codes were recorded - STORED LED will be lit. Once codes were recorded and stored - the system should start up every time with STORED LED lit.
+When powered, system indicates if any pre-recorded IR codes were found. If not, you'd need to press and hold "IRCODE RECORD" button (pin D12). It will initiate 2-stage recording, first AUDIO\_START code and AUDIO\_STOP code. System indicates recording status with the LED: blinks twice for the first code and once for the second code. When codes were recorded - STORED LED will be lit. Once codes were recorded and stored - the system should start up every time with STORED LED lit.
 
 ### Typical Use ###
 System enters audio monitoring state when initiated. When audio was detected, system sends AUDIO START code to turn the audio system on and monitors for 12V audio trigger. If trigger was not detected in 10s, system assumes that audio is enabled.
@@ -71,6 +71,8 @@ This state listens for the 12V LOW state over the 3.5mm INPUT jack and signals T
 
 
 ## Circuit and PCB ##
+Below are the electronics circuit diagram and the board files (600dpi PNG images) for the PCB fabrication
+
 ![schematics](https://github.com/stellarshenson/audio-detector/blob/master/misc/audio-detector_schematics.png)
 ![top](https://github.com/stellarshenson/audio-detector/blob/master/misc/audio-detector_top_600dpi.png)
 ![bottom](https://github.com/stellarshenson/audio-detector/blob/master/misc/audio-detector_bottom_600dpi.png)

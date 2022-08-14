@@ -39,7 +39,7 @@
 #include <jled.h>
 #include <Smoothed.h>
 
-#define OUTPUT_SEND_PIN 3 //pin to send the IR code with via optocoupler
+#define OUTPUT_IRCODE_SEND_PIN 3 //pin to send the IR code with via optocoupler
 #define INPUT_IRCODE_RECV_PIN 2 //pin connected to IR phototransistor
 #define INPUT_BUTTON_PIN 8 //learn signal level with single press, learn IR codes on holdpress
 #define OUTPUT_STATUS_LED_PIN 9 //single LED
