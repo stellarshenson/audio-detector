@@ -47,7 +47,7 @@
 #define INPUT_AUDIOSENSE_DIGITAL_PIN 8 //output from the detector circuit. MK1 has it as a SPDIF decoder serial output
 #define INPUT_AUDIOTRIGGER_PIN 7 //connected to the optocoupler that detects the 12V trigger from the amp
 #define INPUT_AUDIOSENSE_ADC_PIN A1  //sense audio with ADC. Vref should be 3v3
-#define INPUT_CONFIG_AUTOSTANDBY_PIN 6 //configuration pin pullup. If GND than autostandby will be used
+#define INPUT_CONFIG_AUTOSTANDBY_PIN 6 //configuration pin pullup. If GND than autostandby will be used. 
 
 #define TRIGGER_IRCODE_RECORD 1
 #define TRIGGER_IRCODE_RECORDED 2
@@ -111,8 +111,8 @@ void on_button_update(); //updated in the loop button sensing for single and lon
 uint32_t audiosense_millis = 0; //used to measure time before consecutive audio signal checks in AUDIO_ENABLED state
 
 //ADC smoothing setup
-Smoothed <float> audioSenseADC;
-Smoothed <float> audioSenseADC_learn;
+Smoothed <float> audioSenseMovingAvg;
+Smoothed <float> audioSenseMovingAvg_learn;
 uint16_t audioSenseLearnCounter = 0;
 uint16_t audioSenseThreshold = AUDIOSENSE_INIT_THRESHOLD;
 
@@ -169,7 +169,7 @@ void setup() {
   if (startAudioCodeType != 255 && stopAudioCodeType != 255) irCodesAvailable = 1;
   else irCodesAvailable = 0;
 
-  //read autostandby status
+  //read autostandby status. pin has a pullup. 
   autoStandbyEnabled = digitalRead(INPUT_CONFIG_AUTOSTANDBY_PIN) == LOW;
 
   if (DEBUG_LEVEL) Serial.print(F("[INIT] Restoring IR codes, AUDIO START: "));
@@ -196,7 +196,7 @@ void setup() {
   fsm.add_timed_transition(&state_audio_enabled, &state_audio_sense, AUDIO_STANDBY_TIMEOUT, on_audio_enabled_timed_trans_audio_sense);
 
   //initialise audiosense adc smoothing
-  audioSenseADC.begin(SMOOTHED_EXPONENTIAL, AUDIOSENSE_AVG_SAMPLES);
+  audioSenseMovingAvg.begin(SMOOTHED_EXPONENTIAL, AUDIOSENSE_AVG_SAMPLES);
 }
 
 void loop() {
@@ -362,7 +362,7 @@ void on_audio_learn_enter() {
   audioSenseLearnCounter = 0;
   audioSenseThreshold = 0;
 
-  audioSenseADC_learn.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
+  audioSenseMovingAvg_learn.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
 }
 
 /**
@@ -377,15 +377,15 @@ void on_audio_learn_loop() {
       
       //reset last sense millis
       _lastSenseMillis = millis();
-      audioSenseADC_learn.add(_value);
+      audioSenseMovingAvg_learn.add(_value);
       if(DEBUG_LEVEL > 0) { 
         Serial.print("[Learn] sensed_value: ");
         Serial.print(_value);
         Serial.print(", average_value:  ");
-        Serial.println(audioSenseADC_learn.get());
+        Serial.println(audioSenseMovingAvg_learn.get());
       }
     } else {
-      audioSenseThreshold = audioSenseADC_learn.get();
+      audioSenseThreshold = audioSenseMovingAvg_learn.get();
 
       //save to EEPROM
       EEPROM.update(12, audioSenseThreshold);
@@ -571,21 +571,21 @@ void on_audio_enabled_timed_trans_audio_sense() {
 boolean senseAudio() {
   static uint32_t _lastSenseMillis = millis();
   float _senseValue = analogRead(INPUT_AUDIOSENSE_ADC_PIN);
-  float _smoothedValue = audioSenseADC.get();
+  float _smoothedValue = audioSenseMovingAvg.get();
 
   if (millis() > _lastSenseMillis + AUDIOSENSE_ADC_INTERVAL) {
-    audioSenseADC.add(_senseValue);
+    audioSenseMovingAvg.add(_senseValue);
     _lastSenseMillis = millis();
 
     // Output the smoothed values to the serial stream. 
     // Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
     if (DEBUG_LEVEL > 1) {
-	Serial.print("[ADC] minimum: 0, maximum: 1024, current_value: ");
-	Serial.print(_senseValue);
-	Serial.print(", smoothed_value: ");
-	Serial.print(_smoothedValue);
-	Serial.print(", threshold_value: ");
-	Serial.println(audioSenseThreshold);
+    	Serial.print("[ADC] minimum: 0, maximum: 1024, current_value: ");
+    	Serial.print(_senseValue);
+    	Serial.print(", smoothed_value: ");
+    	Serial.print(_smoothedValue);
+    	Serial.print(", threshold_value: ");
+    	Serial.println(audioSenseThreshold);
     }
   }
 
