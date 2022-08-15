@@ -65,6 +65,7 @@
 #define AUDIOSENSE_AVG_SAMPLES 100
 #define AUDIOSENSE_ADC_INTERVAL 25
 
+#define STARTUP_DELAY 3000 //let the system tabilise for 3s
 //IR receiver setup
 IRrecv irrecv(INPUT_IRCODE_RECV_PIN);
 IRsend irsend;
@@ -196,7 +197,10 @@ void setup() {
   fsm.add_timed_transition(&state_audio_enabled, &state_audio_sense, AUDIO_STANDBY_TIMEOUT, on_audio_enabled_timed_trans_audio_sense);
 
   //initialise audiosense adc smoothing
-  audioSenseMovingAvg.begin(SMOOTHED_EXPONENTIAL, AUDIOSENSE_AVG_SAMPLES);
+  audioSenseMovingAvg.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
+
+  //let the system stabilise
+  delay(STARTUP_DELAY);
 }
 
 void loop() {
