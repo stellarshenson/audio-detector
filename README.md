@@ -21,21 +21,22 @@ System enters audio monitoring state when initiated. When audio was detected, sy
 
 #### Status Leds ####
 
-* _quick blinking after startup_ - device was not configured yet, hold button to record IR codes and press button once to record trigger audio volume
-* _slow blinking after startup_ - everything is ok, device waits for the audio signal
-* _led stays on_ - audio detected
+* **quick blinking after startup** - device was not configured yet, hold button to record IR codes and press button once to record trigger audio volume
+* **slow blinking after startup** - everything is ok, device waits for the audio signal
+* **led stays on** - audio detected
 
-* _quick blinking after button hold_ - device waits for your first infrared remote signal
-* _slower blinking after button hold_ - device waits for your second infrared remote signal
+* **quick blinking after button hold** - device waits for your first infrared remote signal
+* **slower blinking after button hold** - device waits for your second infrared remote signal
+* **quick blinking after button press** - device learns the volume level for which it should trigger
 
 
 ## Arduino ##
 The board used is the Arduino Nano and the libraries:
-* *arduino-fsm stellarshenson fork* - State Machine was implemented with arduino_fsm state machine library https://github.com/jonblack/arduino-fsm. This project however uses my fork of the library to allow timed transitions reset: https://github.com/stellarshenson/arduino-fsm. Pull was already requested from the *arduino-fsm* owner, hopefully my fork will be merged soon
-* *IRRemote v2.6.1* - IR code recording and sending was implemented with library https://github.com/z3t0/Arduino-IRremote
-* *JLed v4.11* - non-blocking led library used for various blinking patterns
-* *EnableInterrupt v1.1.0* - simple interrupt driver
-* *Smoothed 1.2.0* - moving average for signal detection (detecting averaged value)
+* **arduino-fsm stellarshenson fork** - State Machine was implemented with arduino_fsm state machine library https://github.com/jonblack/arduino-fsm. This project however uses my fork of the library to allow timed transitions reset: https://github.com/stellarshenson/arduino-fsm. Pull was already requested from the *arduino-fsm* owner, hopefully my fork will be merged soon
+* **IRRemote v2.6.1** - IR code recording and sending was implemented with library https://github.com/z3t0/Arduino-IRremote
+* **JLed v4.11** - non-blocking led library used for various blinking patterns
+* **EnableInterrupt v1.1.0** - simple interrupt driver
+* **Smoothed 1.2.0** - moving average for signal detection (detecting averaged value)
 
 
 ## State Machine ##
