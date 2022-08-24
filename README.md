@@ -19,6 +19,15 @@ System enters audio monitoring state when initiated. When audio was detected, sy
 * Next, if 12V trigger is available, system waits for the line to go LOW and sends AUDIO STOP code and starts monitoring for the audio again back in the initial state
 * If 12V trigger is not available, system monitors audio signal and if audio signal is not available for 10min, sends AUDIO STOP and goes back to initial state
 
+#### Status Leds ####
+
+* _quick blinking after startup_ - device was not configured yet, hold button to record IR codes and press button once to record trigger audio volume
+* _slow blinking after startup_ - everything is ok, device waits for the audio signal
+* _led stays on_ - audio detected
+
+* _quick blinking after button hold_ - device waits for your first infrared remote signal
+* _slower blinking after button hold_ - device waits for your second infrared remote signal
+
 
 ## Arduino ##
 The board used is the Arduino Nano and the libraries:

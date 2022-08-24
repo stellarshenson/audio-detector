@@ -62,9 +62,9 @@
 #define AUDIO_STANDBY_TIMEOUT 10* 60000 //timeout for the audio shutdown if no signal (10min)
 #define AUDIO_ENABLED_SENSE_INTERVAL 1* 60000 //timeout for checking audio signal in AUDIO_ENABLED (1min)
 #define AUDIOSENSE_INIT_THRESHOLD 300
-#define AUDIOSENSE_AVG_SAMPLES 25 //number of samples for averaging
+#define AUDIOSENSE_AVG_SAMPLES 100 //number of samples for averaging
 #define AUDIOSENSE_ADC_INTERVAL 100 //time between samples
-#define STARTUP_DELAY 3000 //let the system tabilise for 3s
+#define STARTUP_STABILISE_DURATION 3000 //let the system tabilise for a while (3s)
 
 //IR receiver setup
 #define EXCLUDE_EXOTIC_PROTOCOLS // saves around 900 bytes program space with IRRemote v3.2+
@@ -73,8 +73,8 @@ IRsend irsend;
 decode_results results;
 
 //nonblocking LED setup
-auto led_sense_noconfig = JLed(OUTPUT_STATUS_LED_PIN).Breathe(500).Forever().DelayAfter(1000);
-auto led_sense_configok = JLed(OUTPUT_STATUS_LED_PIN).Breathe(2000).Forever().DelayAfter(2000);
+auto led_sense_noconfig = JLed(OUTPUT_STATUS_LED_PIN).Blink(250,1000).Forever();  //quick blinking if no config
+auto led_sense_configok = JLed(OUTPUT_STATUS_LED_PIN).Blink(1000,2000).Forever(); //long blinking if everything is ok
 auto led_audio_enabled =  JLed(OUTPUT_STATUS_LED_PIN).On();
 auto led_audio_disabled = JLed(OUTPUT_STATUS_LED_PIN).Off();
 auto led_audio_learning = JLed(OUTPUT_STATUS_LED_PIN).Blink(750, 250).Forever();
@@ -201,9 +201,6 @@ void setup() {
   //enable audiosense averaging
   audioSenseMovingAvg.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
   audioSenseMovingAvg_learn.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
-
-  //let the system stabilise
-  delay(STARTUP_DELAY);
 }
 
 void loop() {
@@ -243,6 +240,7 @@ void on_audio_sense_enter() {
 */
 void on_audio_sense_loop() {
   boolean _audio_sensed = senseAudio();
+  if( millis() < STARTUP_STABILISE_DURATION ) _audio_sensed = false; //ignore signal if still stabilising the system
 
   // hold button to enable recording ircode
   if (button_detected == BUTTON_HOLDPRESS) {
