@@ -22,8 +22,11 @@ System enters audio monitoring state when initiated. When audio was detected, sy
 
 ## Arduino ##
 The board used is the Arduino Nano and the libraries:
-* State Machine was implemented with *arduino_fsm* state machine library https://github.com/jonblack/arduino-fsm. This project however uses my fork of the library to allow timed transitions reset: https://github.com/stellarshenson/arduino-fsm. Pull was already requested from the *arduino-fsm* owner, hopefully my fork will be merged soon
-* IR code recording and sending was implemented with *IRRemote* library https://github.com/z3t0/Arduino-IRremote
+* *arduino-fsm stellarshenson fork* - State Machine was implemented with arduino_fsm state machine library https://github.com/jonblack/arduino-fsm. This project however uses my fork of the library to allow timed transitions reset: https://github.com/stellarshenson/arduino-fsm. Pull was already requested from the *arduino-fsm* owner, hopefully my fork will be merged soon
+* *IRRemote v2.6.1* - IR code recording and sending was implemented with library https://github.com/z3t0/Arduino-IRremote
+* *JLed v4.11* - non-blocking led library used for various blinking patterns
+* *EnableInterrupt v1.1.0* - simple interrupt driver
+* *Smoothed 1.2.0* - moving average for signal detection (detecting averaged value)
 
 
 ## State Machine ##
