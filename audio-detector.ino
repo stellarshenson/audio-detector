@@ -67,7 +67,7 @@
 #define STARTUP_DELAY 3000 //let the system tabilise for 3s
 
 //IR receiver setup
-#define EXCLUDE_EXOTIC_PROTOCOLS // saves around 900 bytes program space
+#define EXCLUDE_EXOTIC_PROTOCOLS // saves around 900 bytes program space with IRRemote v3.2+
 IRrecv irrecv(INPUT_IRCODE_RECV_PIN);
 IRsend irsend;
 decode_results results;
@@ -80,7 +80,7 @@ auto led_audio_disabled = JLed(OUTPUT_STATUS_LED_PIN).Off();
 auto led_audio_learning = JLed(OUTPUT_STATUS_LED_PIN).Blink(750, 250).Forever();
 auto led_ir_recording_1 = JLed(OUTPUT_STATUS_LED_PIN).Blink(100, 100).Forever();
 auto led_ir_recording_2 = JLed(OUTPUT_STATUS_LED_PIN).Blink(500, 500).Forever();
-JLed led_active = led_sense_noconfig;
+JLed led_active = led_sense_noconfig; //this will be set to the active led scheme
 
 // Storage for the recorded code
 void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long codeValue);
@@ -592,7 +592,7 @@ boolean senseAudio() {
 
     // Output the smoothed values to the serial stream. 
     // Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
-    if (DEBUG_LEVEL > 2) {
+    if (DEBUG_LEVEL > 1) {
       Serial.print(F("[ADC] minimum: 0, maximum: 1024, current_value: "));
       Serial.print(_senseValue);
       Serial.print(F(", smoothed_value: "));
