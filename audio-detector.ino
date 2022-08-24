@@ -32,8 +32,8 @@
   Copyright by Stellars Henson 2020
 */
 
-#include <IRremote.h>         //version 2.6.1
 #include <EEPROM.h>
+#include <IRremote.h>         //version 2.8.0
 #include <Fsm.h>              //arduino-fsm fork by Stellars Henson
 #include <EnableInterrupt.h>  //version 1.1.0
 #include <jled.h>             //version 4.11
@@ -49,14 +49,6 @@
 #define INPUT_AUDIOSENSE_ADC_PIN A1  //sense audio with ADC. Vref should be 3v3
 #define INPUT_CONFIG_AUTOSTANDBY_PIN 6 //configuration pin pullup. If GND than autostandby will be used. 
 
-#define TRIGGER_IRCODE_RECORD 1
-#define TRIGGER_IRCODE_RECORDED 2
-#define TRIGGER_AUDIO_DETECTED 3
-#define TRIGGER_AUDIO_ENABLED 4
-#define TRIGGER_AUDIO_DISABLED 5
-#define TRIGGER_AUDIO_LEARN 6
-#define TRIGGER_AUDIO_LEARNED 7
-
 #define DEBUG_LEVEL 2 //0 - debug off, 1 - essential messages, 2 - full diagnostics
 #define AUDIO_START_TIMEOUT 3000 //timeout for the audio start detection
 #define AUDIO_STANDBY_TIMEOUT 10* 60000 //timeout for the audio shutdown if no signal (10min)
@@ -65,6 +57,15 @@
 #define AUDIOSENSE_AVG_SAMPLES 100 //number of samples for averaging
 #define AUDIOSENSE_ADC_INTERVAL 100 //time between samples
 #define STARTUP_STABILISE_DURATION 3000 //let the system tabilise for a while (3s)
+
+//triggers for the FSM
+#define TRIGGER_IRCODE_RECORD 1
+#define TRIGGER_IRCODE_RECORDED 2
+#define TRIGGER_AUDIO_DETECTED 3
+#define TRIGGER_AUDIO_ENABLED 4
+#define TRIGGER_AUDIO_DISABLED 5
+#define TRIGGER_AUDIO_LEARN 6
+#define TRIGGER_AUDIO_LEARNED 7
 
 //IR receiver setup
 #define EXCLUDE_EXOTIC_PROTOCOLS // saves around 900 bytes program space with IRRemote v3.2+
