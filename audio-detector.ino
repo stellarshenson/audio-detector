@@ -32,12 +32,12 @@
   Copyright by Stellars Henson 2020
 */
 
-#include <IRremote.h>
+#include <IRremote.h>         //version 2.6.1
 #include <EEPROM.h>
-#include <Fsm.h>
-#include <EnableInterrupt.h>
-#include <jled.h>
-#include <Smoothed.h>
+#include <Fsm.h>              //arduino-fsm fork by Stellars Henson
+#include <EnableInterrupt.h>  //version 1.1.0
+#include <jled.h>             //version 4.11
+#include <Smoothed.h>         //version 1.2.0
 
 #define OUTPUT_IRCODE_SEND_PIN 3 //pin to send the IR code with via optocoupler
 #define INPUT_IRCODE_RECV_PIN 2 //pin connected to IR phototransistor
@@ -62,24 +62,25 @@
 #define AUDIO_STANDBY_TIMEOUT 10* 60000 //timeout for the audio shutdown if no signal (10min)
 #define AUDIO_ENABLED_SENSE_INTERVAL 1* 60000 //timeout for checking audio signal in AUDIO_ENABLED (1min)
 #define AUDIOSENSE_INIT_THRESHOLD 300
-#define AUDIOSENSE_AVG_SAMPLES 100
-#define AUDIOSENSE_ADC_INTERVAL 25
+#define AUDIOSENSE_AVG_SAMPLES 100 //number of samples for averaging
+#define AUDIOSENSE_ADC_INTERVAL 100 //time between samples
+#define STARTUP_STABILISE_DURATION 3000 //let the system tabilise for a while (3s)
 
-#define STARTUP_DELAY 3000 //let the system tabilise for 3s
 //IR receiver setup
+#define EXCLUDE_EXOTIC_PROTOCOLS // saves around 900 bytes program space with IRRemote v3.2+
 IRrecv irrecv(INPUT_IRCODE_RECV_PIN);
 IRsend irsend;
 decode_results results;
 
 //nonblocking LED setup
-auto led_sense_noconfig = JLed(OUTPUT_STATUS_LED_PIN).Breathe(1000).Forever().DelayAfter(1000);
-auto led_sense_configok = JLed(OUTPUT_STATUS_LED_PIN).Breathe(2000).Forever().DelayAfter(2000);
+auto led_sense_noconfig = JLed(OUTPUT_STATUS_LED_PIN).Blink(250,1000).Forever();  //quick blinking if no config
+auto led_sense_configok = JLed(OUTPUT_STATUS_LED_PIN).Blink(1000,2000).Forever(); //long blinking if everything is ok
 auto led_audio_enabled =  JLed(OUTPUT_STATUS_LED_PIN).On();
 auto led_audio_disabled = JLed(OUTPUT_STATUS_LED_PIN).Off();
 auto led_audio_learning = JLed(OUTPUT_STATUS_LED_PIN).Blink(750, 250).Forever();
 auto led_ir_recording_1 = JLed(OUTPUT_STATUS_LED_PIN).Blink(100, 100).Forever();
 auto led_ir_recording_2 = JLed(OUTPUT_STATUS_LED_PIN).Blink(500, 500).Forever();
-JLed led_active = led_sense_noconfig;
+JLed led_active = led_sense_noconfig; //this will be set to the active led scheme
 
 // Storage for the recorded code
 void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long codeValue);
@@ -146,6 +147,7 @@ Fsm   fsm(&state_audio_sense); //set up the bootstrap state to start with
 void setup() {
   Serial.begin(9600);
 
+  //setup pins
   pinMode(INPUT_BUTTON_PIN, INPUT_PULLUP);
   pinMode(INPUT_AUDIOTRIGGER_PIN, INPUT_PULLUP);
   pinMode(OUTPUT_STATUS_LED_PIN, OUTPUT);
@@ -181,7 +183,7 @@ void setup() {
   if (DEBUG_LEVEL) Serial.println(audioSenseThreshold, DEC);
   if (DEBUG_LEVEL && irCodesAvailable != 1) Serial.println(F("[INIT] IR codes not available"));
   if (DEBUG_LEVEL) Serial.print(F("[INIT] Automatic standby is: "));
-  if (DEBUG_LEVEL) Serial.println( digitalRead(autoStandbyEnabled ? "OFF" : "ON") );
+  if (DEBUG_LEVEL) Serial.println( digitalRead(autoStandbyEnabled) ? "OFF" : "ON" );
 
   //initialise state machine
   fsm.add_transition(&state_audio_sense, &state_ircode_record, TRIGGER_IRCODE_RECORD, NULL);
@@ -196,11 +198,9 @@ void setup() {
   fsm.add_timed_transition(&state_audio_start, &state_audio_enabled, AUDIO_START_TIMEOUT, on_audio_start_timed_trans_audio_enabled);
   fsm.add_timed_transition(&state_audio_enabled, &state_audio_sense, AUDIO_STANDBY_TIMEOUT, on_audio_enabled_timed_trans_audio_sense);
 
-  //initialise audiosense adc smoothing
+  //enable audiosense averaging
   audioSenseMovingAvg.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
-
-  //let the system stabilise
-  delay(STARTUP_DELAY);
+  audioSenseMovingAvg_learn.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
 }
 
 void loop() {
@@ -240,6 +240,7 @@ void on_audio_sense_enter() {
 */
 void on_audio_sense_loop() {
   boolean _audio_sensed = senseAudio();
+  if( millis() < STARTUP_STABILISE_DURATION ) _audio_sensed = false; //ignore signal if still stabilising the system
 
   // hold button to enable recording ircode
   if (button_detected == BUTTON_HOLDPRESS) {
@@ -266,6 +267,9 @@ void on_audio_sense_loop() {
 void on_audio_sense_exit() {
   if (DEBUG_LEVEL == 2) Serial.println(F("[AUDIO SENSE] Exit. Disabling audio signal detection"));
   disableInterrupt(INPUT_BUTTON_PIN);
+
+  //clear audiosense averaging
+  audioSenseMovingAvg.clear();
 }
 
 
@@ -365,8 +369,6 @@ void on_audio_learn_enter() {
   led_active = led_audio_learning;
   audioSenseLearnCounter = 0;
   audioSenseThreshold = 0;
-
-  audioSenseMovingAvg_learn.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
 }
 
 /**
@@ -382,10 +384,10 @@ void on_audio_learn_loop() {
       //reset last sense millis
       _lastSenseMillis = millis();
       audioSenseMovingAvg_learn.add(_value);
-      if(DEBUG_LEVEL > 0) { 
-        Serial.print("[Learn] sensed_value: ");
+      if(DEBUG_LEVEL) { 
+        Serial.print(F("[Learn] sensed_value: "));
         Serial.print(_value);
-        Serial.print(", average_value:  ");
+        Serial.print(F(", average_value:  "));
         Serial.println(audioSenseMovingAvg_learn.get());
       }
     } else {
@@ -409,6 +411,9 @@ void on_audio_learn_exit() {
     Serial.print(F("[AUDIOSENSE LEARN] Exit. New threshold set to: "));
     Serial.println(audioSenseThreshold, DEC);
   }
+
+  //disable audiosense averaging
+  audioSenseMovingAvg_learn.clear();
 }
 
 // AUDIO START STATE
@@ -447,7 +452,7 @@ void on_audio_start_loop() {
   announce exit from the audio start state
 */
 void on_audio_start_exit() {
-  if (DEBUG_LEVEL == 2) Serial.println("[AUDIO START] Exit. Audio is on");
+  if (DEBUG_LEVEL == 2) Serial.println(F("[AUDIO START] Exit. Audio is on"));
 }
 
 /**
@@ -551,6 +556,9 @@ void on_audio_enabled_exit() {
 
   //disable output pin to indicate that audio is off
   digitalWrite(OUTPUT_AUDIO_ENABLED_PIN, LOW);
+
+  //clear audiosense averaging
+  audioSenseMovingAvg.clear();
 }
 
 
@@ -584,12 +592,12 @@ boolean senseAudio() {
     // Output the smoothed values to the serial stream. 
     // Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
     if (DEBUG_LEVEL > 1) {
-    	Serial.print("[ADC] minimum: 0, maximum: 1024, current_value: ");
-    	Serial.print(_senseValue);
-    	Serial.print(", smoothed_value: ");
-    	Serial.print(_smoothedValue);
-    	Serial.print(", threshold_value: ");
-    	Serial.println(audioSenseThreshold);
+      Serial.print(F("[ADC] minimum: 0, maximum: 1024, current_value: "));
+      Serial.print(_senseValue);
+      Serial.print(F(", smoothed_value: "));
+      Serial.print(_smoothedValue);
+      Serial.print(F(", threshold_value: "));
+      Serial.println(audioSenseThreshold);
     }
   }
 
@@ -619,20 +627,20 @@ void storeCode(decode_results *results, uint8_t &codeType, uint8_t &codeLen, uns
       if (i % 2) {
         // Mark
         rawCodes[i - 1] = results->rawbuf[i] * MICROS_PER_TICK - MARK_EXCESS_MICROS;
-        if (DEBUG_LEVEL) Serial.print(" m");
+        if (DEBUG_LEVEL) Serial.print(F(" m"));
       }
       else {
         // Space
         rawCodes[i - 1] = results->rawbuf[i] * MICROS_PER_TICK - MARK_EXCESS_MICROS;
-        if (DEBUG_LEVEL) Serial.print(" s");
+        if (DEBUG_LEVEL) Serial.print(F(" s"));
       }
       if (DEBUG_LEVEL) Serial.print(rawCodes[i - 1], DEC);
     }
-    if (DEBUG_LEVEL) Serial.println("");
+    if (DEBUG_LEVEL) Serial.println();
   }
   else {
     if (codeType == NEC) {
-      if (DEBUG_LEVEL == 2) Serial.print(F("Received NEC: "));
+      if (DEBUG_LEVEL) Serial.print(F("Received NEC: "));
       if (results->value == REPEAT) {
         // Don't record a NEC repeat value as that's useless.
         if (DEBUG_LEVEL == 2) Serial.println(F("repeat; ignoring."));
@@ -645,7 +653,7 @@ void storeCode(decode_results *results, uint8_t &codeType, uint8_t &codeLen, uns
     else {
       if (DEBUG_LEVEL) Serial.print(F("Unexpected"));
       if (DEBUG_LEVEL) Serial.print(codeType, DEC);
-      if (DEBUG_LEVEL) Serial.println("");
+      if (DEBUG_LEVEL) Serial.println();
     }
     if (DEBUG_LEVEL == 2) Serial.println(results->value, HEX);
     codeValue = results->value;
