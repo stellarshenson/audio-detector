@@ -32,12 +32,12 @@
   Copyright by Stellars Henson 2020
 */
 
-#include <IRremote.h>
+#include <IRremote.h>         //version 2.6.1
 #include <EEPROM.h>
-#include <Fsm.h>
-#include <EnableInterrupt.h>
-#include <jled.h>
-#include <Smoothed.h>
+#include <Fsm.h>              //arduino-fsm fork by Stellars Henson
+#include <EnableInterrupt.h>  //version 1.1.0
+#include <jled.h>             //version 4.11
+#include <Smoothed.h>         //version 1.2.0
 
 #define OUTPUT_IRCODE_SEND_PIN 3 //pin to send the IR code with via optocoupler
 #define INPUT_IRCODE_RECV_PIN 2 //pin connected to IR phototransistor
@@ -64,15 +64,16 @@
 #define AUDIOSENSE_INIT_THRESHOLD 300
 #define AUDIOSENSE_AVG_SAMPLES 25
 #define AUDIOSENSE_ADC_INTERVAL 100
-
 #define STARTUP_DELAY 3000 //let the system tabilise for 3s
+
 //IR receiver setup
+#define EXCLUDE_EXOTIC_PROTOCOLS // saves around 900 bytes program space
 IRrecv irrecv(INPUT_IRCODE_RECV_PIN);
 IRsend irsend;
 decode_results results;
 
 //nonblocking LED setup
-auto led_sense_noconfig = JLed(OUTPUT_STATUS_LED_PIN).Breathe(1000).Forever().DelayAfter(1000);
+auto led_sense_noconfig = JLed(OUTPUT_STATUS_LED_PIN).Breathe(500).Forever().DelayAfter(1000);
 auto led_sense_configok = JLed(OUTPUT_STATUS_LED_PIN).Breathe(2000).Forever().DelayAfter(2000);
 auto led_audio_enabled =  JLed(OUTPUT_STATUS_LED_PIN).On();
 auto led_audio_disabled = JLed(OUTPUT_STATUS_LED_PIN).Off();
@@ -591,7 +592,7 @@ boolean senseAudio() {
 
     // Output the smoothed values to the serial stream. 
     // Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
-    if (DEBUG_LEVEL > 1) {
+    if (DEBUG_LEVEL > 2) {
       Serial.print(F("[ADC] minimum: 0, maximum: 1024, current_value: "));
       Serial.print(_senseValue);
       Serial.print(F(", smoothed_value: "));
@@ -640,7 +641,7 @@ void storeCode(decode_results *results, uint8_t &codeType, uint8_t &codeLen, uns
   }
   else {
     if (codeType == NEC) {
-      if (DEBUG_LEVEL == 2) Serial.print(F("Received NEC: "));
+      if (DEBUG_LEVEL) Serial.print(F("Received NEC: "));
       if (results->value == REPEAT) {
         // Don't record a NEC repeat value as that's useless.
         if (DEBUG_LEVEL == 2) Serial.println(F("repeat; ignoring."));
