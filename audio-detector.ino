@@ -62,8 +62,8 @@
 #define AUDIO_STANDBY_TIMEOUT 10* 60000 //timeout for the audio shutdown if no signal (10min)
 #define AUDIO_ENABLED_SENSE_INTERVAL 1* 60000 //timeout for checking audio signal in AUDIO_ENABLED (1min)
 #define AUDIOSENSE_INIT_THRESHOLD 300
-#define AUDIOSENSE_AVG_SAMPLES 25
-#define AUDIOSENSE_ADC_INTERVAL 100
+#define AUDIOSENSE_AVG_SAMPLES 25 //number of samples for averaging
+#define AUDIOSENSE_ADC_INTERVAL 100 //time between samples
 #define STARTUP_DELAY 3000 //let the system tabilise for 3s
 
 //IR receiver setup
@@ -147,6 +147,7 @@ Fsm   fsm(&state_audio_sense); //set up the bootstrap state to start with
 void setup() {
   Serial.begin(9600);
 
+  //setup pins
   pinMode(INPUT_BUTTON_PIN, INPUT_PULLUP);
   pinMode(INPUT_AUDIOTRIGGER_PIN, INPUT_PULLUP);
   pinMode(OUTPUT_STATUS_LED_PIN, OUTPUT);
