@@ -53,8 +53,8 @@
 #define AUDIO_STANDBY_TIMEOUT 10* 60000 //timeout for the audio shutdown if no signal (10min)
 #define AUDIO_ENABLED_SENSE_INTERVAL 1* 60000 //timeout for checking audio signal in AUDIO_ENABLED (1min)
 #define AUDIOSENSE_INIT_THRESHOLD 300 //initial threshold if no config available
-#define AUDIOSENSE_AVG_SAMPLES 100 //number of samples for averaging
-#define AUDIOSENSE_ADC_INTERVAL 25 //time between samples
+#define AUDIOSENSE_AVG_SAMPLES 50 //number of samples for averaging
+#define AUDIOSENSE_ADC_INTERVAL 50 //time between samples
 #define STARTUP_STABILISE_DURATION 3000 //let the system tabilise for a while (3s)
 
 //triggers for the FSM
