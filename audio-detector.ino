@@ -1,8 +1,6 @@
 /*
-  Audio detector that listens for an audio signal with the SPDIF TOSLINK or COAX receiver and controls audio components with the 12V trigger and IR signal
-  The board used in the project is the Arduino Nano and the libraries:
-  State Machine was implemented with *arduino_fsm* state machine library https://github.com/jonblack/arduino-fsm
-  IR code recording and sending was implemented with *IRRemote* library https://github.com/z3t0/Arduino-IRremote
+  Audio detector that triggers on the audio signal at the RCA socket and turns on (and off) 
+  your audio system using Infrared Remote signal and/or a Relay
 
                      +-----+
         +------------| USB |------------+
@@ -27,9 +25,10 @@
         | NANO-V3                       |
         +-------------------------------+
 
-  Update on 26 Mar 2020: code has been tested and all works with NAD326bee amplifier and Yamaha WXAD-10 streamer
+  26 Mar 2020: code has been tested and all works with NAD326bee amplifier and Yamaha WXAD-10 streamer
+  20 Aug 2022: updated the code with the moving average to elliminate voltage spikes
   
-  Copyright by Stellars Henson 2020
+  Copyright by Stellars Henson 2020-2022
 */
 
 #include <EEPROM.h>
