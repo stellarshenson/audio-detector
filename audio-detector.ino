@@ -43,7 +43,6 @@
 #define INPUT_BUTTON_PIN 8 //learn signal level with single press, learn IR codes on holdpress
 #define OUTPUT_STATUS_LED_PIN 9 //single LED
 #define OUTPUT_AUDIO_ENABLED_PIN 4 //set to high when audio is enabled
-#define INPUT_AUDIOSENSE_DIGITAL_PIN 8 //output from the detector circuit. MK1 has it as a SPDIF decoder serial output
 #define INPUT_AUDIOTRIGGER_PIN 7 //connected to the optocoupler that detects the 12V trigger from the amp
 #define INPUT_AUDIOSENSE_ADC_PIN A1  //sense audio with ADC. Vref should be 3v3
 #define INPUT_CONFIG_AUTOSTANDBY_PIN 6 //configuration pin pullup. If GND than autostandby will be used. 
@@ -548,7 +547,6 @@ void on_audio_enabled_exit() {
 
   //disable audio sense interrupt
   if (DEBUG_LEVEL == 2 && audioTriggerAvailable == 0) Serial.println(F("[AUDIO ENABLED] Disabling shutdown timer"));
-  disableInterrupt(INPUT_AUDIOSENSE_DIGITAL_PIN);
   disableInterrupt(INPUT_BUTTON_PIN);
 
   //indicate LED audio disabled
