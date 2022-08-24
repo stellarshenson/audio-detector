@@ -32,7 +32,7 @@
 */
 
 #include <EEPROM.h>
-#include <IRremote.h>         //version 2.8.0
+#include <IRremote.h>         //version 2.6.1
 #include <Fsm.h>              //arduino-fsm fork by Stellars Henson
 #include <EnableInterrupt.h>  //version 1.1.0
 #include <jled.h>             //version 4.11
@@ -135,7 +135,6 @@ void on_audio_enabled_enter();
 void on_audio_enabled_loop();
 void on_audio_enabled_exit();
 void on_audio_start_timed_trans_audio_enabled();
-
 State state_audio_sense(on_audio_sense_enter, on_audio_sense_loop, on_audio_sense_exit); //idle state, waiting for audio signal
 State state_ircode_record(on_ircode_record_enter, on_ircode_record_loop, on_ircode_record_exit); //state where IR codes are recorded for start and stop audio
 State state_audio_learn(on_audio_learn_enter, on_audio_learn_loop, on_audio_learn_exit); //state where threshold for audio detection is set
@@ -143,7 +142,10 @@ State state_audio_start(on_audio_start_enter, on_audio_start_loop, on_audio_star
 State state_audio_enabled(on_audio_enabled_enter, on_audio_enabled_loop, on_audio_enabled_exit); //idle state where audio is enabled. keeps checking if the audio is still on
 Fsm   fsm(&state_audio_sense); //set up the bootstrap state to start with
 
+
 void setup() {
+
+  //start serial and command listener
   Serial.begin(9600);
 
   //setup pins
@@ -384,7 +386,7 @@ void on_audio_learn_loop() {
       _lastSenseMillis = millis();
       audioSenseMovingAvg_learn.add(_value);
       if(DEBUG_LEVEL) { 
-        Serial.print(F("[Learn] sensed_value: "));
+        Serial.print(F("[Learn]  minimum: 0, maximum: 1024, sensed_value: "));
         Serial.print(_value);
         Serial.print(F(", average_value:  "));
         Serial.println(audioSenseMovingAvg_learn.get());
@@ -510,7 +512,6 @@ void on_audio_enabled_loop() {
     //INPUT_AUDIOTRIGGER_PIN goes HIGH inverted by the optocoupler
     if (audioTriggerState == HIGH) {
       if (DEBUG_LEVEL) Serial.println(F("[AUDIO ENABLED] Standby trigger detected"));
-      blink(OUTPUT_STATUS_LED_PIN, 3, 300); // blink status led that the audio is enabled
       fsm.trigger(TRIGGER_AUDIO_DISABLED); //initiate state transition
     }
     //when 12V trigger is not present, check for audio signal every AUDIOSENSE_ENABLED_SENSE_INTERVAL
@@ -731,15 +732,4 @@ void on_button_update() {
       if (DEBUG_LEVEL) Serial.println(F("[IRQ] Holdpress detected"));
     }
   } 
-}
-
-/**
-  blinks pin with a led #cycles number of times, each within the duration
-*/
-static void  blink( const byte pin, const byte cycles, const unsigned int duration) {
-  uint8_t initialState = digitalRead(pin);
-  for (unsigned short i = 0; i < cycles * 2; i++) {
-    digitalWrite(pin, ~(i + initialState) & 1);
-    delay(duration / 2);
-  }
 }
