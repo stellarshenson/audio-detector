@@ -1,5 +1,5 @@
 /*
-  Audio detector that triggers on the audio signal at the RCA socket and turns on (and off) 
+  Audio detector that triggers on the audio signal at the RCA socket and turns on (and off)
   your audio system using Infrared Remote signal and/or a Relay
 
                      +-----+
@@ -27,7 +27,7 @@
 
   26 Mar 2020: code has been tested and all works with NAD326bee amplifier and Yamaha WXAD-10 streamer
   20 Aug 2022: updated the code with the moving average to elliminate voltage spikes
-  
+
   Copyright by Stellars Henson 2020-2022
 */
 
@@ -72,8 +72,8 @@ IRsend irsend;
 decode_results results;
 
 //nonblocking LED setup
-auto led_sense_noconfig = JLed(OUTPUT_STATUS_LED_PIN).Blink(250,1000).Forever();  //quick blinking if no config
-auto led_sense_configok = JLed(OUTPUT_STATUS_LED_PIN).Blink(1000,2000).Forever(); //long blinking if everything is ok
+auto led_sense_noconfig = JLed(OUTPUT_STATUS_LED_PIN).Blink(250, 1000).Forever(); //quick blinking if no config
+auto led_sense_configok = JLed(OUTPUT_STATUS_LED_PIN).Blink(1000, 2000).Forever(); //long blinking if everything is ok
 auto led_audio_enabled =  JLed(OUTPUT_STATUS_LED_PIN).On();
 auto led_audio_disabled = JLed(OUTPUT_STATUS_LED_PIN).Off();
 auto led_audio_learning = JLed(OUTPUT_STATUS_LED_PIN).Blink(750, 250).Forever();
@@ -142,9 +142,10 @@ State state_audio_start(on_audio_start_enter, on_audio_start_loop, on_audio_star
 State state_audio_enabled(on_audio_enabled_enter, on_audio_enabled_loop, on_audio_enabled_exit); //idle state where audio is enabled. keeps checking if the audio is still on
 Fsm   fsm(&state_audio_sense); //set up the bootstrap state to start with
 
+//debug and commandline
+uint8_t debug_plot_enabled = 0; //plot disabled by default
 
 void setup() {
-
   //start serial and command listener
   Serial.begin(9600);
 
@@ -173,7 +174,7 @@ void setup() {
   if (startAudioCodeType != 255 && stopAudioCodeType != 255) irCodesAvailable = 1;
   else irCodesAvailable = 0;
 
-  //read autostandby status. pin has a pullup. 
+  //read autostandby status. pin has a pullup.
   autoStandbyEnabled = digitalRead(INPUT_CONFIG_AUTOSTANDBY_PIN) == LOW;
 
   if (DEBUG_LEVEL) Serial.print(F("[INIT] Restoring IR codes, AUDIO START: "));
@@ -208,6 +209,7 @@ void loop() {
   fsm.run_machine(); //run state loops
   led_active.Update(); //run led driver
   on_button_update(); //run button sensing
+  cmd_poll(); //run command interpreter
 }
 
 
@@ -241,7 +243,7 @@ void on_audio_sense_enter() {
 */
 void on_audio_sense_loop() {
   boolean _audio_sensed = senseAudio();
-  if( millis() < STARTUP_STABILISE_DURATION ) _audio_sensed = false; //ignore signal if still stabilising the system
+  if ( millis() < STARTUP_STABILISE_DURATION ) _audio_sensed = false; //ignore signal if still stabilising the system
 
   // hold button to enable recording ircode
   if (button_detected == BUTTON_HOLDPRESS) {
@@ -381,11 +383,13 @@ void on_audio_learn_loop() {
   if (millis() > _lastSenseMillis + AUDIOSENSE_ADC_INTERVAL) {
     if (audioSenseLearnCounter++ < AUDIOSENSE_AVG_SAMPLES) {
       float _value = analogRead(INPUT_AUDIOSENSE_ADC_PIN);
-      
+
       //reset last sense millis
       _lastSenseMillis = millis();
       audioSenseMovingAvg_learn.add(_value);
-      if(DEBUG_LEVEL) { 
+
+      //plot only if enabled
+      if (debug_plot_enabled) {
         Serial.print(F("[Learn]  minimum: 0, maximum: 1024, sensed_value: "));
         Serial.print(_value);
         Serial.print(F(", average_value:  "));
@@ -588,9 +592,9 @@ boolean senseAudio() {
     audioSenseMovingAvg.add(_senseValue);
     _lastSenseMillis = millis();
 
-    // Output the smoothed values to the serial stream. 
+    // Output the smoothed values to the serial stream.
     // Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
-    if (DEBUG_LEVEL > 1) {
+    if (debug_plot_enabled) {
       Serial.print(F("[ADC] minimum: 0, maximum: 1024, current_value: "));
       Serial.print(_senseValue);
       Serial.print(F(", smoothed_value: "));
@@ -697,8 +701,8 @@ void on_button_irq() {
 }
 
 /**
- * drives update of the button status for short and long press
- */
+   drives update of the button status for short and long press
+*/
 void on_button_update() {
   static uint32_t _lastSenseMillis = millis(); //set timer
   static float _lastSenseValue = HIGH;  //start with button released
@@ -718,18 +722,60 @@ void on_button_update() {
       if (DEBUG_LEVEL) Serial.println(F("[IRQ] Holdpress ended"));
       button_detected = 0;
       _lastSenseValue = _senseValue;
-      }
+    }
     else {
       button_detected = BUTTON_SINGLEPRESS;
       _lastSenseValue = _senseValue;
       if (DEBUG_LEVEL) Serial.println(F("[IRQ] Singlepress detected"));
     }
-  } 
+  }
   //if no release but holdpress
   else if (_lastSenseValue == LOW && _senseValue == LOW) {
     if (_lastSenseMillis + HOLDPRESS_TIMEOUT < millis() && button_detected != BUTTON_HOLDPRESS) {
       button_detected = BUTTON_HOLDPRESS;
       if (DEBUG_LEVEL) Serial.println(F("[IRQ] Holdpress detected"));
     }
-  } 
+  }
+}
+
+
+/**
+   drives the commandline
+*/
+void cmd_poll() {
+  static String _delimiter = " "; //delimit commands by space
+  String _cmd; //will contain the full command line
+  String _token; 
+  int _ptr = 0;
+  int _argc = 0;
+  String _argv[10];
+
+  if (Serial.available()) {
+    _cmd = Serial.readString();
+    _cmd.trim();
+
+    //print the command to the Serial
+    Serial.println(_cmd);
+
+    //tokenise the string
+    while (_ptr < _cmd.length() && _argc < 10) {
+      int _delIndex = _cmd.indexOf(_delimiter, _ptr);
+
+      if (_delIndex == -1) {
+        _token = _cmd.substring(_ptr);
+        _ptr = _cmd.length();
+        break;
+      } else {
+        _token = _cmd.substring(_ptr, _delIndex);
+        _token.trim();
+        _ptr = _delIndex + _delimiter.length();
+        _argc++;
+        _argv[_argc] = _token;
+      }
+
+      //print token to Serial
+      Serial.println(String("token: " + _token));
+    }
+  }
+  
 }
