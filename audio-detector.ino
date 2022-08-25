@@ -144,6 +144,8 @@ Fsm   fsm(&state_audio_sense); //set up the bootstrap state to start with
 
 //debug and commandline
 uint8_t debug_plot_enabled = 0; //plot disabled by default
+void cmd_poller(HardwareSerial, void *handler(int, String*));
+void cmd_handler(int argc, String* argv);
 
 void setup() {
   //start serial and command listener
@@ -209,7 +211,7 @@ void loop() {
   fsm.run_machine(); //run state loops
   led_active.Update(); //run led driver
   on_button_update(); //run button sensing
-  cmd_poll(); //run command interpreter
+  cmd_poll(Serial, cmd_handler); //run command interpreter
 }
 
 
@@ -742,7 +744,7 @@ void on_button_update() {
 /**
    drives the commandline
 */
-void cmd_poll() {
+void cmd_poll(HardwareSerial serial, void *handler(int, String*) ) {
   static String _delimiter = " "; //delimit commands by space
   String _cmd; //will contain the full command line
   String _token; 
@@ -750,6 +752,7 @@ void cmd_poll() {
   int _argc = 0;
   String *_argv = (String*)malloc(sizeof(String)*1);
 
+  //trigger only if the command is available
   if (Serial.available()) {
     _cmd = Serial.readString();
     _cmd.trim();
@@ -781,8 +784,21 @@ void cmd_poll() {
       Serial.println(String("token: " + _token));
     }
 
+    //handle the input
+    handler(_argc, _argv);
+
     //command was consumed, free the memory
     free(_argv);
   }
-  
+}
+
+/**
+ * command handler
+ * @param argc number of tokens
+ * @param argv Strings array with tokens
+ */
+void cmd_handler(int argc, String* argv) {
+  Serial.print("Handler, have ");
+  Serial.print(argc);
+  Serial.println(" tokens");
 }
