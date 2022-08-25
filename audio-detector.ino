@@ -748,7 +748,7 @@ void cmd_poll() {
   String _token; 
   int _ptr = 0;
   int _argc = 0;
-  String _argv[10];
+  String *_argv = (String*)malloc(sizeof(String)*1);
 
   if (Serial.available()) {
     _cmd = Serial.readString();
@@ -763,19 +763,26 @@ void cmd_poll() {
 
       if (_delIndex == -1) {
         _token = _cmd.substring(_ptr);
+        _token.trim();
         _ptr = _cmd.length();
         break;
       } else {
         _token = _cmd.substring(_ptr, _delIndex);
         _token.trim();
         _ptr = _delIndex + _delimiter.length();
-        _argc++;
-        _argv[_argc] = _token;
       }
+
+      //resize table and add token to the list
+      _argc++;
+      realloc(_argv, _argc);
+      _argv[_argc] = _token;
 
       //print token to Serial
       Serial.println(String("token: " + _token));
     }
+
+    //command was consumed, free the memory
+    free(_argv);
   }
   
 }
