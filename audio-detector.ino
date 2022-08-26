@@ -752,8 +752,8 @@ void on_button_update() {
 */
 void cmd_poll(HardwareSerial &serial, void *handler(int, String*)) {
   static const uint8_t MAX_CMD_TOKENS = 10; //max tokens to process
-  static String _delimiter = " "; //delimit commands by space
-  static String _argv[MAX_CMD_TOKENS]; //fixed array for tokens
+  static const String _delimiter = " "; //delimit commands by space
+  static const String _argv[MAX_CMD_TOKENS]; //fixed array for tokens
   String _cmd; //will contain the full command line
   String _token; //current token
   int _ptr = 0;
