@@ -33,7 +33,7 @@
 
 #include <EEPROM.h>
 #include <IRremote.h>         //version 2.6.1
-#include <Fsm.h>              //arduino-fsm fork by Stellars Henson
+#include <Fsm.h>              //arduino-fsm fork by Stellars Henson https://github.com/stellarshenson/arduino-fsm
 #include <EnableInterrupt.h>  //version 1.1.0
 #include <jled.h>             //version 4.11
 #include <Smoothed.h>         //version 1.2.0
