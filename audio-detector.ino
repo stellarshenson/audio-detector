@@ -249,7 +249,7 @@ void on_audio_sense_enter() {
   audio and ircode button detection is driven by interrupts
 */
 void on_audio_sense_loop() {
-  boolean _audio_sensed = senseAudio();
+  boolean _audio_sensed = senseAudio() > audioSenseThreshold;
   if ( millis() < STARTUP_STABILISE_DURATION ) _audio_sensed = false; //ignore signal if still stabilising the system
 
   // hold button to enable recording ircode
@@ -403,7 +403,8 @@ void on_audio_learn_loop() {
         Serial.println(audioSenseMovingAvg_learn.get());
       }
     } else {
-      audioSenseThreshold = audioSenseMovingAvg_learn.get();
+      //set threshold to the measured average but it must be at least 10
+      audioSenseThreshold = audioSenseMovingAvg_learn.get() > 10 ? audioSenseMovingAvg_learn.get() : 10;
 
       //save to EEPROM
       EEPROM.update(12, audioSenseThreshold);
@@ -512,7 +513,7 @@ void on_audio_enabled_enter() {
   if 12V trigger is not available, system refreshes  the timer with the audio signal detection
 */
 void on_audio_enabled_loop() {
-  boolean _audio_sensed = senseAudio();
+  boolean _audio_sensed = senseAudio() > audioSenseThreshold;;
 
   //listen for the trigger only if available
   if (audioTriggerAvailable == 1) {
@@ -590,7 +591,7 @@ void on_audio_enabled_timed_trans_audio_sense() {
 /**
   performs sensing of the audio signal with ADC
 */
-boolean senseAudio() {
+int senseAudio() {
   static uint32_t _lastSenseMillis = millis();
   float _senseValue = analogRead(INPUT_AUDIOSENSE_ADC_PIN);
   float _smoothedValue = audioSenseMovingAvg.get();
@@ -611,7 +612,7 @@ boolean senseAudio() {
     }
   }
 
-  return _smoothedValue > audioSenseThreshold;
+  return _smoothedValue;
 }
 
 /**
@@ -828,6 +829,8 @@ void cmd_handler(int argc, String * argv) {
     Serial.println(audioSenseThreshold);
     Serial.print(F("Audio is "));
     Serial.println(digitalRead(OUTPUT_AUDIO_ENABLED_PIN) == 0 ? "off" : "on");
+    Serial.print(F("Audio level is "));
+    Serial.println(senseAudio());
     Serial.print(F("Autostandby config: "));
     Serial.println(autoStandbyEnabled == 0 ? "off" : "on");
     Serial.print(F("External 12V Trigger: "));
