@@ -764,7 +764,8 @@ void cmd_poll(HardwareSerial &serial, void *handler(int, String*)) {
     serial.println(_cmd);
 
     //tokenise the string
-    while (_ptr < _cmd.length()) {
+    while (_ptr < _cmd.length()) {      
+      //find next token
       int _delIndex = _cmd.indexOf(_delimiter, _ptr);
       if (_delIndex == -1) {
         _token = _cmd.substring(_ptr);
@@ -778,6 +779,9 @@ void cmd_poll(HardwareSerial &serial, void *handler(int, String*)) {
 
       //save the token
       _argv[_argc++] = _token;
+
+      //if argc is 10, stop processing
+      if(_argc == 10) break;
     }
 
     handler(_argc, _argv);
