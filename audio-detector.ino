@@ -795,6 +795,7 @@ void cmd_poll(HardwareSerial &serial, void *handler(int, String*)) {
    @param argv Strings array with tokens
 */
 void cmd_handler(int argc, String * argv) {
+  //set commands
   if ( argv[0] == "set" ) {
 
     //threshold
@@ -827,10 +828,10 @@ void cmd_handler(int argc, String * argv) {
     Serial.println(F("[STATUS] Printing device status:"));
     Serial.print( F("Audiosense threshold: ") );
     Serial.println(audioSenseThreshold);
-    Serial.print(F("Audio is "));
-    Serial.println(digitalRead(OUTPUT_AUDIO_ENABLED_PIN) == 0 ? "off" : "on");
     Serial.print(F("Audio level is "));
     Serial.println(senseAudio());
+    Serial.print(F("Audio is "));
+    Serial.println(digitalRead(OUTPUT_AUDIO_ENABLED_PIN) == 0 ? "off" : "on");
     Serial.print(F("Autostandby config: "));
     Serial.println(autoStandbyEnabled == 0 ? "off" : "on");
     Serial.print(F("External 12V Trigger: "));
