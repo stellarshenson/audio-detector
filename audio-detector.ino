@@ -766,7 +766,7 @@ void cmd_poll(HardwareSerial &serial, void *handler(int, String*)) {
     serial.println(_cmd);
 
     //tokenise the string
-    while (_ptr < _cmd.length()) {      
+    while (_ptr < _cmd.length()) {
       //find next token
       int _delIndex = _cmd.indexOf(_delimiter, _ptr);
       if (_delIndex == -1) {
@@ -783,7 +783,7 @@ void cmd_poll(HardwareSerial &serial, void *handler(int, String*)) {
       _argv[_argc++] = _token;
 
       //if argc is MAX_CMD_TOKENS, stop processing
-      if(_argc == MAX_CMD_TOKENS) break;
+      if (_argc == MAX_CMD_TOKENS) break;
     }
 
     //call handler function passed as argument
@@ -810,6 +810,17 @@ void cmd_handler(int argc, String * argv) {
         //save to EEPROM
         EEPROM.update(12, audioSenseThreshold);
         EEPROM.update(13, audioSenseThreshold >> 8);
+      }
+    }
+
+    //audio state
+    if ( argc > 1 && argv[1] == "audio" ) {
+      if (argc > 2 && argv[2] == "0") {
+        Serial.println(F("[CONFIG] turning audio off"));
+        fsm.trigger(TRIGGER_AUDIO_DISABLED);
+      } else if (argc > 2 && argv[2] == "1") {
+        Serial.println(F("[CONFIG] turning audio on"));
+        fsm.trigger(TRIGGER_AUDIO_DETECTED);
       }
     }
 
@@ -849,7 +860,8 @@ void cmd_handler(int argc, String * argv) {
   if ( argv[0] == "help" ) {
     Serial.println( F("[HELP] available commands")  );
     Serial.println( F("set threshold <n> - to set the audio sense threshold")  );
-    Serial.println( F("set debug_plot [0|1] - to enable audio signal plot")  );
+    Serial.println( F("set audio [0|1] - to enable or disable audio control") );
+    Serial.println( F("set debug_plot [0|1] - to enable audio signal plot (use arduino tools->serial plotter)")  );
     Serial.println( F("status - to print device status") );
     Serial.println( F("reset - to reset the device") );
   }
