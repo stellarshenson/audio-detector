@@ -147,8 +147,8 @@ uint8_t debug_plot_enabled = 0; //plot disabled by default
 void cmd_poll(HardwareSerial &serial, void *handler(int, String*));
 void cmd_handler(int argc, String* argv);
 
-//reset function
-void(* reset) (void) = 0;
+//reboot function
+void(* reboot) (void) = 0;
 
 void setup() {
   //start serial and command listener
@@ -853,8 +853,8 @@ void cmd_handler(int argc, String * argv) {
     Serial.println( debug_plot_enabled == 0 ? "off" : "on" );
   }
 
-  //reset
-  if ( argv[0] == "reset" ) reset();
+  //reboot
+  if ( argv[0] == "reboot" ) reboot();
 
   //help
   if ( argv[0] == "help" ) {
@@ -863,7 +863,7 @@ void cmd_handler(int argc, String * argv) {
     Serial.println( F("set audio [0|1] - to enable or disable audio control") );
     Serial.println( F("set debug_plot [0|1] - to enable audio signal plot (use arduino tools->serial plotter)")  );
     Serial.println( F("status - to print device status") );
-    Serial.println( F("reset - to reset the device") );
+    Serial.println( F("reboot - to reboot the device") );
   }
 
 }
