@@ -144,8 +144,11 @@ Fsm   fsm(&state_audio_sense); //set up the bootstrap state to start with
 
 //debug and commandline
 uint8_t debug_plot_enabled = 0; //plot disabled by default
-void cmd_poller(HardwareSerial, void *handler(int, String*));
+void cmd_poll(HardwareSerial &serial, void *handler(int, String*));
 void cmd_handler(int argc, String* argv);
+
+//reset function
+void(* reset) (void) = 0;
 
 void setup() {
   //start serial and command listener
@@ -205,6 +208,9 @@ void setup() {
   //enable audiosense averaging
   audioSenseMovingAvg.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
   audioSenseMovingAvg_learn.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
+
+  //print command prompt
+  Serial.println(F("[INIT] type 'help' for commands list"));
 }
 
 void loop() {
@@ -213,7 +219,6 @@ void loop() {
   on_button_update(); //run button sensing
   cmd_poll(Serial, cmd_handler); //run command interpreter
 }
-
 
 // *******************************
 // STATE MACHINE
@@ -744,61 +749,99 @@ void on_button_update() {
 /**
    drives the commandline
 */
-void cmd_poll(HardwareSerial serial, void *handler(int, String*) ) {
+void cmd_poll(HardwareSerial &serial, void *handler(int, String*)) {
   static String _delimiter = " "; //delimit commands by space
+  static String _argv[10]; //fixed array for tokens
   String _cmd; //will contain the full command line
-  String _token; 
+  String _token;
   int _ptr = 0;
   int _argc = 0;
-  String *_argv = (String*)malloc(sizeof(String)*1);
 
-  //trigger only if the command is available
-  if (Serial.available()) {
-    _cmd = Serial.readString();
+  //only if command available
+  if (serial.available()) {
+    _cmd = serial.readString();
     _cmd.trim();
-
-    //print the command to the Serial
-    Serial.println(_cmd);
+    serial.println(_cmd);
 
     //tokenise the string
-    while (_ptr < _cmd.length() && _argc < 10) {
+    while (_ptr < _cmd.length()) {
       int _delIndex = _cmd.indexOf(_delimiter, _ptr);
-
       if (_delIndex == -1) {
         _token = _cmd.substring(_ptr);
         _token.trim();
         _ptr = _cmd.length();
-        break;
       } else {
         _token = _cmd.substring(_ptr, _delIndex);
         _token.trim();
         _ptr = _delIndex + _delimiter.length();
       }
 
-      //resize table and add token to the list
-      _argc++;
-      realloc(_argv, _argc);
-      _argv[_argc] = _token;
-
-      //print token to Serial
-      Serial.println(String("token: " + _token));
+      //save the token
+      _argv[_argc++] = _token;
     }
 
-    //handle the input
     handler(_argc, _argv);
-
-    //command was consumed, free the memory
-    free(_argv);
   }
 }
 
 /**
- * command handler
- * @param argc number of tokens
- * @param argv Strings array with tokens
- */
-void cmd_handler(int argc, String* argv) {
-  Serial.print("Handler, have ");
-  Serial.print(argc);
-  Serial.println(" tokens");
+   command handler
+   @param argc number of tokens
+   @param argv Strings array with tokens
+*/
+void cmd_handler(int argc, String * argv) {
+  if ( argv[0] == "set" ) {
+
+    //threshold
+    if ( argc > 1 && argv[1] == "threshold") {
+      if ( argc > 2 && argv[2].toInt() != 0 ) {
+        Serial.print( F("[CONFIG] setting Audiosense threshold to ") );
+        Serial.println(argv[2].toInt());
+        audioSenseThreshold = argv[2].toInt();
+
+        //save to EEPROM
+        EEPROM.update(12, audioSenseThreshold);
+        EEPROM.update(13, audioSenseThreshold >> 8);
+      }
+    }
+
+    //debug plot
+    if ( argc > 1 && argv[1] == "debug_plot" ) {
+      if ( argc > 2 && argv[2] == "0"  ) {
+        Serial.println(F("[CONFIG] setting debug_plot off"));
+        debug_plot_enabled = 0;
+      } else if ( argc > 2 && argv[2] == "1" ) {
+        Serial.println(F("[CONFIG] setting debug_plot on"));
+        debug_plot_enabled = 1;
+      }
+    }
+  }
+
+  //status
+  if ( argv[0] == "status") {
+    Serial.println(F("[STATUS] Printing device status:"));
+    Serial.print( F("Audiosense threshold: ") );
+    Serial.println(audioSenseThreshold);
+    Serial.print(F("Audio is "));
+    Serial.println(digitalRead(OUTPUT_AUDIO_ENABLED_PIN) == 0 ? "off" : "on");
+    Serial.print(F("Autostandby config: "));
+    Serial.println(autoStandbyEnabled == 0 ? "off" : "on");
+    Serial.print(F("External 12V Trigger: "));
+    Serial.println(digitalRead(INPUT_AUDIOTRIGGER_PIN) == 0 ? "on" : "off");
+    Serial.print( F("Debug plot: ") );
+    Serial.println( debug_plot_enabled == 0 ? "off" : "on" );
+  }
+
+  //reset
+  if ( argv[0] == "reset" ) reset();
+
+  //help
+  if ( argv[0] == "help" ) {
+    Serial.println( F("[HELP] available commands")  );
+    Serial.println( F("set threshold <n> - to set the audio sense threshold")  );
+    Serial.println( F("set debug_plot [0|1] - to enable audio signal plot")  );
+    Serial.println( F("status - to print device status") );
+    Serial.println( F("reset - to reset the device") );
+  }
+
 }
