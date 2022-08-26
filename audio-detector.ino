@@ -751,10 +751,11 @@ void on_button_update() {
    drives the commandline
 */
 void cmd_poll(HardwareSerial &serial, void *handler(int, String*)) {
+  static const uint8_t MAX_CMD_TOKENS = 10; //max tokens to process
   static String _delimiter = " "; //delimit commands by space
-  static String _argv[10]; //fixed array for tokens
+  static String _argv[MAX_CMD_TOKENS]; //fixed array for tokens
   String _cmd; //will contain the full command line
-  String _token;
+  String _token; //current token
   int _ptr = 0;
   int _argc = 0;
 
@@ -781,10 +782,11 @@ void cmd_poll(HardwareSerial &serial, void *handler(int, String*)) {
       //save the token
       _argv[_argc++] = _token;
 
-      //if argc is 10, stop processing
-      if(_argc == 10) break;
+      //if argc is MAX_CMD_TOKENS, stop processing
+      if(_argc == MAX_CMD_TOKENS) break;
     }
 
+    //call handler function passed as argument
     handler(_argc, _argv);
   }
 }
