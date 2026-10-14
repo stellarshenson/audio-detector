@@ -1,0 +1,6 @@
+build/
+*.hex
+*.elf
+*.bin
+.pio/
+logs/
