@@ -35,8 +35,8 @@
 #include <IRremote.h>         //version 2.6.1
 #include <Fsm.h>              //arduino-fsm fork by Stellars Henson https://github.com/stellarshenson/arduino-fsm
 #include <EnableInterrupt.h>  //version 1.1.0
-#include <jled.h>             //version 4.11
-#include <Smoothed.h>         //version 1.2.0
+#include <jled.h>             //version 4.5.2
+#include "AudioLevel.h"       //ADC sampling, moving average, threshold learning and hysteresis
 
 #define OUTPUT_IRCODE_SEND_PIN 3 //pin to send the IR code with via optocoupler
 #define INPUT_IRCODE_RECV_PIN 2 //pin connected to IR phototransistor
@@ -44,17 +44,16 @@
 #define OUTPUT_STATUS_LED_PIN 9 //single LED
 #define OUTPUT_AUDIO_ENABLED_PIN 4 //set to high when audio is enabled
 #define INPUT_AUDIOTRIGGER_PIN 7 //connected to the optocoupler that detects the 12V trigger from the amp
-#define INPUT_AUDIOSENSE_ADC_PIN A1  //sense audio with ADC. Vref should be 3v3
+#define INPUT_AUDIOSENSE_ADC_PIN A1  //sense audio with ADC, reference AVCC 5V
 #define INPUT_CONFIG_AUTOSTANDBY_PIN 6 //configuration pin pullup. If GND than autostandby will be used. 
 
 #define DEBUG_LEVEL 2 //0 - debug off, 1 - essential messages, 2 - full diagnostics
 #define AUDIO_START_TIMEOUT 3000 //timeout for the audio start detection
 #define AUDIO_STANDBY_TIMEOUT 10* 60000 //timeout for the audio shutdown if no signal (10min)
 #define AUDIO_ENABLED_SENSE_INTERVAL 1* 60000 //timeout for checking audio signal in AUDIO_ENABLED (1min)
-#define AUDIOSENSE_INIT_THRESHOLD 300 //initial threshold if no config available
-#define AUDIOSENSE_AVG_SAMPLES 50 //number of samples for averaging
-#define AUDIOSENSE_ADC_INTERVAL 50 //time between samples
 #define STARTUP_STABILISE_DURATION 3000 //let the system tabilise for a while (3s)
+#define EEPROM_MAX_ADDRESS 1023 //the ATmega328P EEPROM size minus one
+#define EEPROM_BLOCK_SIZE 16 //bytes printed or written by one eeprom command
 
 //triggers for the FSM
 #define TRIGGER_IRCODE_RECORD 1
@@ -83,7 +82,7 @@ JLed led_active = led_sense_noconfig; //this will be set to the active led schem
 
 // Storage for the recorded code
 void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long codeValue);
-void storeCode(decode_results *results, int8_t &codeType, uint8_t &codeLen, unsigned long &codeValue);
+bool storeCode(decode_results *results, uint8_t &codeType, uint8_t &codeLen, unsigned long &codeValue);
 
 
 uint8_t startAudioCodeType = 255; // The type of code
@@ -95,7 +94,6 @@ uint8_t stopAudioCodeLen; // The length of the code
 uint32_t stopAudioCodeValue; // The code value if not raw
 
 uint8_t toggle = 0; // The RC5/6 toggle state
-uint16_t rawCodes[RAW_BUFFER_LENGTH]; // The durations if raw
 uint8_t irCodesAvailable = 0; //if ircodes were recorded
 
 uint8_t audioTriggerAvailable = 0; //if 12V trigger is available. Audio enable timeout sets this to 0, detection of the 12V trigger sets this to 1. We can also detect this with an audio jack (it has detect input feature)
@@ -105,17 +103,16 @@ uint8_t autoStandbyEnabled = 0; //enabled by the configuration pin INPUT_CONFIG_
 #define BUTTON_HOLDPRESS 2
 #define BUTTON_SINGLEPRESS 1
 #define HOLDPRESS_TIMEOUT 600
+#define BUTTON_DEBOUNCE 20 //ms the button level must stay unchanged to count
 volatile uint8_t button_detected = 0;
 void on_button_irq(); //irq driver
 void on_button_update(); //updated in the loop button sensing for single and long press
 
 uint32_t audiosense_millis = 0; //used to measure time before consecutive audio signal checks in AUDIO_ENABLED state
 
-//ADC smoothing setup
-Smoothed <float> audioSenseMovingAvg;
-Smoothed <float> audioSenseMovingAvg_learn;
-uint16_t audioSenseLearnCounter = 0;
-uint16_t audioSenseThreshold = AUDIOSENSE_INIT_THRESHOLD;
+//audio level on the ADC pin
+AudioLevel audioLevel;
+void plotAudio();
 
 
 //FSM - set up of the state machine
@@ -144,7 +141,7 @@ Fsm   fsm(&state_audio_sense); //set up the bootstrap state to start with
 
 //debug and commandline
 uint8_t debug_plot_enabled = 0; //plot disabled by default
-void cmd_poll(HardwareSerial &serial, void *handler(int, String*));
+void cmd_poll(HardwareSerial &serial, void (*handler)(int, String*));
 void cmd_handler(int argc, String* argv);
 
 //reboot function
@@ -159,7 +156,6 @@ void setup() {
   pinMode(INPUT_AUDIOTRIGGER_PIN, INPUT_PULLUP);
   pinMode(OUTPUT_STATUS_LED_PIN, OUTPUT);
   pinMode(OUTPUT_AUDIO_ENABLED_PIN, OUTPUT);
-  pinMode(INPUT_AUDIOSENSE_ADC_PIN, INPUT);
   pinMode(INPUT_CONFIG_AUTOSTANDBY_PIN, INPUT_PULLUP);
   digitalWrite(OUTPUT_AUDIO_ENABLED_PIN, LOW);
 
@@ -172,8 +168,12 @@ void setup() {
   stopAudioCodeLen = EEPROM.read(10);
   stopAudioCodeType = EEPROM.read(11);
 
-  //recover audio sense threshold for ADC
-  audioSenseThreshold = ( (uint16_t)EEPROM.read(12)) | ( (uint16_t)EEPROM.read(13) << 8);
+  //recover audio sense threshold
+  audioLevel.begin(INPUT_AUDIOSENSE_ADC_PIN);
+
+  //a stored code that sendCode cannot send counts as not recorded
+  if (!isSendable(startAudioCodeType)) startAudioCodeType = 255;
+  if (!isSendable(stopAudioCodeType)) stopAudioCodeType = 255;
 
   //initiate status led to indicate if config ok or not available
   if (startAudioCodeType != 255 && stopAudioCodeType != 255) irCodesAvailable = 1;
@@ -187,10 +187,10 @@ void setup() {
   if (DEBUG_LEVEL) Serial.print(F(" , AUDIO STOP: "));
   if (DEBUG_LEVEL) Serial.print(stopAudioCodeValue, HEX);
   if (DEBUG_LEVEL) Serial.print(F(" , SENSE THRESHOLD: "));
-  if (DEBUG_LEVEL) Serial.println(audioSenseThreshold, DEC);
+  if (DEBUG_LEVEL) Serial.println(audioLevel.threshold(), DEC);
   if (DEBUG_LEVEL && irCodesAvailable != 1) Serial.println(F("[INIT] IR codes not available"));
   if (DEBUG_LEVEL) Serial.print(F("[INIT] Automatic standby is: "));
-  if (DEBUG_LEVEL) Serial.println( digitalRead(autoStandbyEnabled) ? "OFF" : "ON" );
+  if (DEBUG_LEVEL) Serial.println( autoStandbyEnabled ? "ON" : "OFF" );
 
   //initialise state machine
   fsm.add_transition(&state_audio_sense, &state_ircode_record, TRIGGER_IRCODE_RECORD, NULL);
@@ -205,18 +205,17 @@ void setup() {
   fsm.add_timed_transition(&state_audio_start, &state_audio_enabled, AUDIO_START_TIMEOUT, on_audio_start_timed_trans_audio_enabled);
   fsm.add_timed_transition(&state_audio_enabled, &state_audio_sense, AUDIO_STANDBY_TIMEOUT, on_audio_enabled_timed_trans_audio_sense);
 
-  //enable audiosense averaging
-  audioSenseMovingAvg.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
-  audioSenseMovingAvg_learn.begin(SMOOTHED_AVERAGE, AUDIOSENSE_AVG_SAMPLES);
-
   //print command prompt
   Serial.println(F("[INIT] type 'help' for commands list"));
 }
 
 void loop() {
+  if (audioLevel.poll() && debug_plot_enabled) plotAudio(); //sample the audio level in every state
   fsm.run_machine(); //run state loops
   led_active.Update(); //run led driver
+  noInterrupts(); //on_button_update also runs in the button interrupt and changes the same variables
   on_button_update(); //run button sensing
+  interrupts();
   cmd_poll(Serial, cmd_handler); //run command interpreter
 }
 
@@ -237,6 +236,9 @@ void on_audio_sense_enter() {
   button_detected = 0;
   enableInterrupt(INPUT_BUTTON_PIN, on_button_irq, CHANGE);
 
+  //START decides only on samples taken after the return to idle
+  audioLevel.restart();
+
   //light LED for status and configuration
   if (irCodesAvailable == 1) led_active = led_sense_configok;
   else led_active = led_sense_noconfig;
@@ -249,8 +251,9 @@ void on_audio_sense_enter() {
   audio and ircode button detection is driven by interrupts
 */
 void on_audio_sense_loop() {
-  boolean _audio_sensed = senseAudio() > audioSenseThreshold;
-  if ( millis() < STARTUP_STABILISE_DURATION ) _audio_sensed = false; //ignore signal if still stabilising the system
+  static boolean _stable = false; //once set it stays, so the millis() wrap after 49.7 days does not restart the settling time
+  if (!_stable) _stable = millis() >= STARTUP_STABILISE_DURATION;
+  boolean _audio_sensed = _stable && audioLevel.starts(); //ignore signal if still stabilising the system
 
   // hold button to enable recording ircode
   if (button_detected == BUTTON_HOLDPRESS) {
@@ -277,9 +280,6 @@ void on_audio_sense_loop() {
 void on_audio_sense_exit() {
   if (DEBUG_LEVEL == 2) Serial.println(F("[AUDIO SENSE] Exit. Disabling audio signal detection"));
   disableInterrupt(INPUT_BUTTON_PIN);
-
-  //clear audiosense averaging
-  audioSenseMovingAvg.clear();
 }
 
 
@@ -318,30 +318,34 @@ void on_ircode_record_loop() {
   if (irrecv.decode(&results)) {
     //record start audio code
     if ( startAudioCodeType == 255 ) {
-      if (DEBUG_LEVEL) Serial.println(F("[IRCODE RECORD][1/2] - AUDIO START ircode detected"));
-      storeCode(&results, startAudioCodeType, startAudioCodeLen, startAudioCodeValue);
+      if (storeCode(&results, startAudioCodeType, startAudioCodeLen, startAudioCodeValue)) {
+        if (DEBUG_LEVEL) Serial.println(F("[IRCODE RECORD][1/2] - AUDIO START ircode detected"));
 
-      //write the to eeprom and report on serial
-      EEPROM.update(0, startAudioCodeValue);
-      EEPROM.update(1, startAudioCodeValue >> 8);
-      EEPROM.update(2, startAudioCodeValue >> 16);
-      EEPROM.update(3, startAudioCodeValue >> 24);
-      EEPROM.update(4, startAudioCodeLen);
-      EEPROM.update(5, startAudioCodeType);
-      if (DEBUG_LEVEL == 2) Serial.print(F("[IRCODE RECORD][1/2] Saved value: "));
-      if (DEBUG_LEVEL) Serial.println(startAudioCodeValue, HEX);
-      if (DEBUG_LEVEL == 2) Serial.println(F("[IRCODE RECORD][1/2] Waiting for AUDIO STOP ircode"));
+        //write the to eeprom and report on serial
+        EEPROM.update(0, startAudioCodeValue);
+        EEPROM.update(1, startAudioCodeValue >> 8);
+        EEPROM.update(2, startAudioCodeValue >> 16);
+        EEPROM.update(3, startAudioCodeValue >> 24);
+        EEPROM.update(4, startAudioCodeLen);
+        EEPROM.update(5, startAudioCodeType);
+        if (DEBUG_LEVEL == 2) Serial.print(F("[IRCODE RECORD][1/2] Saved value: "));
+        if (DEBUG_LEVEL) Serial.println(startAudioCodeValue, HEX);
+        if (DEBUG_LEVEL == 2) Serial.println(F("[IRCODE RECORD][1/2] Waiting for AUDIO STOP ircode"));
 
-      delay(500);
-      irrecv.resume(); //resume recording for the stop code
+        delay(500);
 
-      //enable recording part #2 led
-      led_active = led_ir_recording_2;
+        //enable recording part #2 led
+        led_active = led_ir_recording_2;
+      }
+      irrecv.resume(); //resume recording for the stop code, or for another code after an ignored one
     }
     //record stop audio code
     else if ( startAudioCodeType != 255 && stopAudioCodeType == 255 ) {
+      if (!storeCode(&results, stopAudioCodeType, stopAudioCodeLen, stopAudioCodeValue)) {
+        irrecv.resume(); //ignored code, keep waiting for the stop code
+        return;
+      }
       if (DEBUG_LEVEL) Serial.println(F("[IRCODE RECORD][2/2] AUDIO STOP ircode detected"));
-      storeCode(&results, stopAudioCodeType, stopAudioCodeLen, stopAudioCodeValue);
 
       //write the to eeprom and report on serial
       EEPROM.update(6, stopAudioCodeValue);
@@ -375,45 +379,16 @@ void on_ircode_record_exit() {
   reset learning and indicate with LED that learningg started
 */
 void on_audio_learn_enter() {
-  if (DEBUG_LEVEL == 2) Serial.println(F("[AUDIOSENSE LEARN] Entering state. Resetting threshold and counter"));
+  if (DEBUG_LEVEL == 2) Serial.println(F("[AUDIOSENSE LEARN] Entering state. Learning threshold"));
   led_active = led_audio_learning;
-  audioSenseLearnCounter = 0;
-  audioSenseThreshold = 0;
+  audioLevel.learnStart();
 }
 
 /**
-  start smooting the audio over the next SAMPLES and record result to EEPROM
+  waits until the audio level has learned the threshold from its next samples; it is saved to EEPROM
 */
 void on_audio_learn_loop() {
-  static uint32_t _lastSenseMillis = millis();
-
-  if (millis() > _lastSenseMillis + AUDIOSENSE_ADC_INTERVAL) {
-    if (audioSenseLearnCounter++ < AUDIOSENSE_AVG_SAMPLES) {
-      float _value = analogRead(INPUT_AUDIOSENSE_ADC_PIN);
-
-      //reset last sense millis
-      _lastSenseMillis = millis();
-      audioSenseMovingAvg_learn.add(_value);
-
-      //plot only if enabled
-      if (debug_plot_enabled) {
-        Serial.print(F("[Learn]  minimum: 0, maximum: 1024, sensed_value: "));
-        Serial.print(_value);
-        Serial.print(F(", average_value:  "));
-        Serial.println(audioSenseMovingAvg_learn.get());
-      }
-    } else {
-      //set threshold to the measured average but it must be at least 10
-      audioSenseThreshold = audioSenseMovingAvg_learn.get() > 10 ? audioSenseMovingAvg_learn.get() : 10;
-
-      //save to EEPROM
-      EEPROM.update(12, audioSenseThreshold);
-      EEPROM.update(13, audioSenseThreshold >> 8);
-
-      //trigger transition
-      fsm.trigger(TRIGGER_AUDIO_LEARNED);
-    }
-  }
+  if (!audioLevel.learning()) fsm.trigger(TRIGGER_AUDIO_LEARNED);
 }
 
 /**
@@ -422,11 +397,8 @@ void on_audio_learn_loop() {
 void on_audio_learn_exit() {
   if (DEBUG_LEVEL == 2) {
     Serial.print(F("[AUDIOSENSE LEARN] Exit. New threshold set to: "));
-    Serial.println(audioSenseThreshold, DEC);
+    Serial.println(audioLevel.threshold(), DEC);
   }
-
-  //disable audiosense averaging
-  audioSenseMovingAvg_learn.clear();
 }
 
 // AUDIO START STATE
@@ -513,7 +485,7 @@ void on_audio_enabled_enter() {
   if 12V trigger is not available, system refreshes  the timer with the audio signal detection
 */
 void on_audio_enabled_loop() {
-  boolean _audio_sensed = senseAudio() > audioSenseThreshold;;
+  boolean _audio_sensed = audioLevel.holds(); //hysteresis: audio stays on down to the off level
 
   //listen for the trigger only if available
   if (audioTriggerAvailable == 1) {
@@ -522,12 +494,15 @@ void on_audio_enabled_loop() {
 
     //if audiotrigger is available we await the 12V trigger to go LOW
     //INPUT_AUDIOTRIGGER_PIN goes HIGH inverted by the optocoupler
+    //only the trigger ends audio in trigger mode, so the standby timeout restarts on every loop
+    fsm.reset_timed_transition(&state_audio_sense);
+
     if (audioTriggerState == HIGH) {
       if (DEBUG_LEVEL) Serial.println(F("[AUDIO ENABLED] Standby trigger detected"));
       fsm.trigger(TRIGGER_AUDIO_DISABLED); //initiate state transition
     }
     //when 12V trigger is not present, check for audio signal every AUDIOSENSE_ENABLED_SENSE_INTERVAL
-  } else if ( audioTriggerAvailable == 0 &&  _audio_sensed && ((audiosense_millis + AUDIO_ENABLED_SENSE_INTERVAL <= millis())) || audiosense_millis > millis() ) {
+  } else if ( audioTriggerAvailable == 0 && _audio_sensed && millis() - audiosense_millis >= AUDIO_ENABLED_SENSE_INTERVAL ) {
     //if signal was detected - reset timer and the signal
     if (DEBUG_LEVEL == 2) Serial.println(F("[AUDIO ENABLED] Audio detected. Timeout reset"));
 
@@ -567,9 +542,6 @@ void on_audio_enabled_exit() {
 
   //disable output pin to indicate that audio is off
   digitalWrite(OUTPUT_AUDIO_ENABLED_PIN, LOW);
-
-  //clear audiosense averaging
-  audioSenseMovingAvg.clear();
 }
 
 
@@ -589,87 +561,59 @@ void on_audio_enabled_timed_trans_audio_sense() {
 //===================== UTILS ============================
 
 /**
-  performs sensing of the audio signal with ADC
+  outputs the last audio sample, the smoothed level, the threshold and the off level to the serial stream
+  open the Arduino IDE Serial plotter to see the effects of the smoothing and the hysteresis
 */
-int senseAudio() {
-  static uint32_t _lastSenseMillis = millis();
-  float _senseValue = analogRead(INPUT_AUDIOSENSE_ADC_PIN);
-  float _smoothedValue = audioSenseMovingAvg.get();
-
-  if (millis() > _lastSenseMillis + AUDIOSENSE_ADC_INTERVAL) {
-    audioSenseMovingAvg.add(_senseValue);
-    _lastSenseMillis = millis();
-
-    // Output the smoothed values to the serial stream.
-    // Open the Arduino IDE Serial plotter to see the effects of the smoothing methods.
-    if (debug_plot_enabled) {
-      Serial.print(F("[ADC] minimum: 0, maximum: 1024, current_value: "));
-      Serial.print(_senseValue);
-      Serial.print(F(", smoothed_value: "));
-      Serial.print(_smoothedValue);
-      Serial.print(F(", threshold_value: "));
-      Serial.println(audioSenseThreshold);
-    }
-  }
-
-  return _smoothedValue;
+void plotAudio() {
+  Serial.print(F("[ADC] minimum: 0, maximum: 1024, current_value: "));
+  Serial.print(audioLevel.sample());
+  Serial.print(F(", smoothed_value: "));
+  Serial.print(audioLevel.level());
+  Serial.print(F(", threshold_value: "));
+  Serial.print(audioLevel.threshold());
+  Serial.print(F(", off_value: "));
+  Serial.println(audioLevel.offLevel());
 }
 
 /**
-  Stores the code for later playback
+  true for the IR code types sendCode can send
+*/
+bool isSendable(uint8_t codeType) {
+  return codeType == NEC || codeType == SONY;
+}
+
+/**
+  Stores the code for later playback, only when sendCode can send it
   Most of this code is just logging
 
   @param results - pointer to the structure with the results decoded
   @param codeType - type of the IR code (NEC, SONY etc..)
   @codeLen - length of the code in bytes
   @codeValue - 4 bytes long code value
+  @return false for an NEC repeat frame or a code type sendCode cannot send; nothing is stored then
 */
-void storeCode(decode_results *results, uint8_t &codeType, uint8_t &codeLen, unsigned long &codeValue) {
-  codeType = results->decode_type;
-  uint8_t count = results->rawlen;
-  if (codeType == UNKNOWN) {
-    if (DEBUG_LEVEL) Serial.println(F("Received unknown code, saving as raw"));
-    codeLen = results->rawlen - 1;
-    // To store raw codes:
-    // Drop first value (gap)
-    // Convert from ticks to microseconds
-    // Tweak marks shorter, and spaces longer to cancel out IR receiver distortion
-    for (int i = 1; i <= codeLen; i++) {
-      if (i % 2) {
-        // Mark
-        rawCodes[i - 1] = results->rawbuf[i] * MICROS_PER_TICK - MARK_EXCESS_MICROS;
-        if (DEBUG_LEVEL) Serial.print(F(" m"));
-      }
-      else {
-        // Space
-        rawCodes[i - 1] = results->rawbuf[i] * MICROS_PER_TICK - MARK_EXCESS_MICROS;
-        if (DEBUG_LEVEL) Serial.print(F(" s"));
-      }
-      if (DEBUG_LEVEL) Serial.print(rawCodes[i - 1], DEC);
+bool storeCode(decode_results *results, uint8_t &codeType, uint8_t &codeLen, unsigned long &codeValue) {
+  if (!isSendable(results->decode_type)) {
+    if (DEBUG_LEVEL) Serial.print(F("[IRCODE RECORD] Code rejected, only NEC and Sony codes can be sent. Received type "));
+    if (DEBUG_LEVEL) Serial.println(results->decode_type, DEC);
+    return false;
+  }
+  if (results->decode_type == NEC) {
+    if (DEBUG_LEVEL) Serial.print(F("Received NEC: "));
+    if (results->value == REPEAT) {
+      // Don't record a NEC repeat value as that's useless.
+      if (DEBUG_LEVEL == 2) Serial.println(F("repeat; ignoring."));
+      return false;
     }
-    if (DEBUG_LEVEL) Serial.println();
   }
   else {
-    if (codeType == NEC) {
-      if (DEBUG_LEVEL) Serial.print(F("Received NEC: "));
-      if (results->value == REPEAT) {
-        // Don't record a NEC repeat value as that's useless.
-        if (DEBUG_LEVEL == 2) Serial.println(F("repeat; ignoring."));
-        return;
-      }
-    }
-    else if (codeType == SONY) {
-      if (DEBUG_LEVEL == 2) Serial.print(F("Received SONY: "));
-    }
-    else {
-      if (DEBUG_LEVEL) Serial.print(F("Unexpected"));
-      if (DEBUG_LEVEL) Serial.print(codeType, DEC);
-      if (DEBUG_LEVEL) Serial.println();
-    }
-    if (DEBUG_LEVEL == 2) Serial.println(results->value, HEX);
-    codeValue = results->value;
-    codeLen = results->bits;
+    if (DEBUG_LEVEL == 2) Serial.print(F("Received SONY: "));
   }
+  if (DEBUG_LEVEL == 2) Serial.println(results->value, HEX);
+  codeType = results->decode_type;
+  codeValue = results->value;
+  codeLen = results->bits;
+  return true;
 }
 
 /**
@@ -694,11 +638,6 @@ void sendCode(uint8_t repeat, uint8_t codeType, uint8_t codeLen, unsigned long c
     if (DEBUG_LEVEL) Serial.print(F("Sent Sony "));
     if (DEBUG_LEVEL) Serial.println(codeValue, HEX);
   }
-  else if (codeType == UNKNOWN /* i.e. raw */) {
-    // Assume 38 KHz
-    irsend.sendRaw(rawCodes, codeLen, 38);
-    if (DEBUG_LEVEL) Serial.println(F("Sent raw"));
-  }
 }
 
 /**
@@ -710,13 +649,22 @@ void on_button_irq() {
 
 /**
    drives update of the button status for short and long press
+   runs in the button interrupt and in loop() with interrupts off, so it prints nothing
+   debounce: the button has no filter, so a level counts only after BUTTON_DEBOUNCE ms unchanged
 */
 void on_button_update() {
   static uint32_t _lastSenseMillis = millis(); //set timer
-  static float _lastSenseValue = HIGH;  //start with button released
+  static uint8_t _lastSenseValue = HIGH;  //debounced level, start with button released
+  static uint8_t _rawValue = HIGH; //level at the last read
+  static uint32_t _rawChangeMillis = millis(); //when the read level last changed
 
   //button pullup and on press shorted to GND
-  float _senseValue = digitalRead(INPUT_BUTTON_PIN);
+  uint8_t _senseValue = digitalRead(INPUT_BUTTON_PIN);
+  if (_senseValue != _rawValue) {
+    _rawValue = _senseValue;
+    _rawChangeMillis = millis();
+  }
+  if (millis() - _rawChangeMillis < BUTTON_DEBOUNCE) return; //contact still bouncing
 
 
   //if single press detected
@@ -726,22 +674,19 @@ void on_button_update() {
   }
   //if release detected and no holdpress
   else if (_lastSenseValue == LOW && _senseValue == HIGH) {
-    if (_lastSenseMillis + HOLDPRESS_TIMEOUT < millis() && button_detected == BUTTON_HOLDPRESS) {
-      if (DEBUG_LEVEL) Serial.println(F("[IRQ] Holdpress ended"));
+    if (millis() - _lastSenseMillis > HOLDPRESS_TIMEOUT && button_detected == BUTTON_HOLDPRESS) {
       button_detected = 0;
       _lastSenseValue = _senseValue;
     }
     else {
       button_detected = BUTTON_SINGLEPRESS;
       _lastSenseValue = _senseValue;
-      if (DEBUG_LEVEL) Serial.println(F("[IRQ] Singlepress detected"));
     }
   }
   //if no release but holdpress
   else if (_lastSenseValue == LOW && _senseValue == LOW) {
-    if (_lastSenseMillis + HOLDPRESS_TIMEOUT < millis() && button_detected != BUTTON_HOLDPRESS) {
+    if (millis() - _lastSenseMillis > HOLDPRESS_TIMEOUT && button_detected != BUTTON_HOLDPRESS) {
       button_detected = BUTTON_HOLDPRESS;
-      if (DEBUG_LEVEL) Serial.println(F("[IRQ] Holdpress detected"));
     }
   }
 }
@@ -749,20 +694,31 @@ void on_button_update() {
 
 /**
    drives the commandline
+   collects the bytes that arrived into a line without waiting, and runs the line once it ends with
+   \n or \r. an empty line runs nothing, bytes past MAX_CMD_LENGTH are dropped
 */
-void cmd_poll(HardwareSerial &serial, void *handler(int, String*)) {
+void cmd_poll(HardwareSerial &serial, void (*handler)(int, String*)) {
   static const uint8_t MAX_CMD_TOKENS = 10; //max tokens to process
+  static const uint8_t MAX_CMD_LENGTH = 64; //max command line length
   static const String _delimiter = " "; //delimit commands by space
-  static const String _argv[MAX_CMD_TOKENS]; //fixed array for tokens
-  String _cmd; //will contain the full command line
+  static String _argv[MAX_CMD_TOKENS]; //fixed array for tokens
+  static String _cmd; //collects the command line across calls
   String _token; //current token
-  int _ptr = 0;
+  unsigned int _ptr = 0;
   int _argc = 0;
+  boolean _lineEnded = false;
+
+  while (!_lineEnded && serial.available()) {
+    char _c = serial.read();
+    if (_c == '\n' || _c == '\r') {
+      _cmd.trim();
+      _lineEnded = _cmd.length() > 0;
+    }
+    else if (_cmd.length() < MAX_CMD_LENGTH) _cmd += _c;
+  }
 
   //only if command available
-  if (serial.available()) {
-    _cmd = serial.readString();
-    _cmd.trim();
+  if (_lineEnded) {
     serial.println(_cmd);
 
     //tokenise the string
@@ -788,7 +744,37 @@ void cmd_poll(HardwareSerial &serial, void *handler(int, String*)) {
 
     //call handler function passed as argument
     handler(_argc, _argv);
+    _cmd = "";
   }
+}
+
+/** value of one hex character, or 0xFF when it is not a hex character */
+uint8_t hexValue(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  return 0xFF;
+}
+
+/** print one byte as two upper-case hex characters */
+void printHexByte(uint8_t value) {
+  const char digits[] = "0123456789ABCDEF";
+  Serial.print(digits[value >> 4]);
+  Serial.print(digits[value & 0x0F]);
+}
+
+/** parse a decimal EEPROM address; false when the text is not a number from 0 to EEPROM_MAX_ADDRESS */
+bool parseAddress(const String &text, long &address) {
+  if (text.length() == 0 || text.length() > 4) return false;
+  long value = 0;
+  for (uint8_t i = 0; i < text.length(); i++) {
+    char c = text[i];
+    if (c < '0' || c > '9') return false;
+    value = value * 10 + (c - '0');
+  }
+  if (value > EEPROM_MAX_ADDRESS) return false;
+  address = value;
+  return true;
 }
 
 /**
@@ -802,14 +788,11 @@ void cmd_handler(int argc, String * argv) {
 
     //threshold
     if ( argc > 1 && argv[1] == "threshold") {
-      if ( argc > 2 && argv[2].toInt() != 0 ) {
+      //only AUDIOLEVEL_MIN_THRESHOLD to the ADC maximum 1023, so the off level stays above quiet; toInt() gives 0 for a word
+      if ( argc > 2 && argv[2].toInt() >= AUDIOLEVEL_MIN_THRESHOLD && argv[2].toInt() <= 1023 ) {
         Serial.print( F("[CONFIG] setting Audiosense threshold to ") );
         Serial.println(argv[2].toInt());
-        audioSenseThreshold = argv[2].toInt();
-
-        //save to EEPROM
-        EEPROM.update(12, audioSenseThreshold);
-        EEPROM.update(13, audioSenseThreshold >> 8);
+        audioLevel.setThreshold(argv[2].toInt()); //saved to EEPROM
       }
     }
 
@@ -836,13 +819,45 @@ void cmd_handler(int argc, String * argv) {
     }
   }
 
+  //eeprom dump and write
+  if ( argv[0] == "eeprom" ) {
+    if ( argc > 2 && argv[1] == "dump" ) {
+      long address;
+      if ( parseAddress(argv[2], address) && address <= EEPROM_MAX_ADDRESS - EEPROM_BLOCK_SIZE + 1 ) {
+        Serial.print(F("[EEPROM] "));
+        Serial.print(address);
+        Serial.print(' ');
+        for (uint8_t i = 0; i < EEPROM_BLOCK_SIZE; i++) printHexByte(EEPROM.read(address + i));
+        Serial.println();
+      }
+    }
+    if ( argc > 3 && argv[1] == "write" ) {
+      long address;
+      if ( parseAddress(argv[2], address) ) {
+        const String &hex = argv[3];
+        uint8_t count = hex.length() / 2;
+        bool valid = hex.length() % 2 == 0 && count >= 1 && count <= EEPROM_BLOCK_SIZE && address + count <= EEPROM_MAX_ADDRESS + 1;
+        for (uint8_t i = 0; valid && i < hex.length(); i++) if (hexValue(hex[i]) == 0xFF) valid = false;
+        if ( valid ) {
+          for (uint8_t i = 0; i < count; i++) EEPROM.update(address + i, (hexValue(hex[i * 2]) << 4) | hexValue(hex[i * 2 + 1]));
+          Serial.print(F("[EEPROM] wrote "));
+          Serial.print(count);
+          Serial.print(F(" bytes at "));
+          Serial.println(address);
+        }
+      }
+    }
+  }
+
   //status
   if ( argv[0] == "status") {
     Serial.println(F("[STATUS] Printing device status:"));
     Serial.print( F("Audiosense threshold: ") );
-    Serial.println(audioSenseThreshold);
+    Serial.println(audioLevel.threshold());
+    Serial.print( F("Audio off level: ") );
+    Serial.println(audioLevel.offLevel());
     Serial.print(F("Audio level is "));
-    Serial.println(senseAudio());
+    Serial.println(audioLevel.level());
     Serial.print(F("Audio is "));
     Serial.println(digitalRead(OUTPUT_AUDIO_ENABLED_PIN) == 0 ? "off" : "on");
     Serial.print(F("Autostandby config: "));
@@ -859,9 +874,11 @@ void cmd_handler(int argc, String * argv) {
   //help
   if ( argv[0] == "help" ) {
     Serial.println( F("[HELP] available commands")  );
-    Serial.println( F("set threshold <n> - to set the audio sense threshold")  );
+    Serial.println( F("set threshold <160-1023> - to set the audio sense threshold")  );
     Serial.println( F("set audio [0|1] - to enable or disable audio control") );
     Serial.println( F("set debug_plot [0|1] - to enable audio signal plot (use arduino tools->serial plotter)")  );
+    Serial.println( F("eeprom dump <0-1008> - to print 16 EEPROM bytes as hex") );
+    Serial.println( F("eeprom write <0-1023> <hex> - to write 1 to 16 EEPROM bytes") );
     Serial.println( F("status - to print device status") );
     Serial.println( F("reboot - to reboot the device") );
   }

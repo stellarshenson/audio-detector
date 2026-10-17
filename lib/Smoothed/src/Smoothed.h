@@ -14,11 +14,11 @@
 template <typename T>
 class Smoothed {
   private:
-    byte smoothMode;
+    byte smoothMode = 0;
     uint16_t smoothReadingsFactor = 10; // The smoothing factor. In average mode, this is the number of readings to average. 
     uint16_t smoothReadingsPosition = 0; // Current position in the array
     uint16_t smoothReadingsNum = 0; // Number of readings currently being averaged
-    T *smoothReading; // Array of readings
+    T *smoothReading = nullptr; // Array of readings
   public:
     Smoothed();
     ~Smoothed(); // Destructor to clean up when class instance killed
@@ -53,7 +53,7 @@ bool Smoothed<T>::begin (byte mode, uint16_t smoothFactor) {
       smoothReading = new T[smoothReadingsFactor]; // Create the actual array of the required size
     
       // Initialise all the values in the array to zero
-      for (int thisReading = 0; thisReading < smoothReadingsNum; thisReading++) {
+      for (uint16_t thisReading = 0; thisReading < smoothReadingsFactor; thisReading++) {
         smoothReading[thisReading] = 0;
       }
 
@@ -124,7 +124,7 @@ T Smoothed<T>::get () {
       // calculating a `SUM(smoothReadings) / smoothReadingsNum` can lead to overflows.
       T tmpRes = 0;
       T remainder = 0;
-      for (int x = 0; x < smoothReadingsNum; x++) {
+      for (uint16_t x = 0; x < smoothReadingsNum; x++) {
         tmpRes = smoothReading[x] / smoothReadingsNum;
         remainder += smoothReading[x] - tmpRes * smoothReadingsNum;
         runningTotal += tmpRes;
@@ -181,7 +181,7 @@ bool Smoothed<T>::clear () {
       smoothReadingsNum = 0; 
       
       // Set all the values in the array to zero.  Not really needed
-      for (int thisReading = 0; thisReading < smoothReadingsNum; thisReading++) {
+      for (uint16_t thisReading = 0; thisReading < smoothReadingsFactor; thisReading++) {
         smoothReading[thisReading] = 0;
       }
       break;
@@ -196,4 +196,5 @@ bool Smoothed<T>::clear () {
       return false;
       break;
   }         
+  return true;
 }
