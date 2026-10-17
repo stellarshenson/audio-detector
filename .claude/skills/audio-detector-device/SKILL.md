@@ -87,7 +87,9 @@ make eeprom-restore PORT=/dev/ttyUSB0 FILE=eeprom.json
 - Both commands are non-interactive and print one JSON line; an agent can run them
 - Take a backup before the first flash of a firmware that changes the EEPROM layout
 - The backup files are in `.gitignore`; do not commit the user's codes unless asked
-- The tool needs the `eeprom` commands in the firmware; a board with older firmware answers no `[EEPROM]` line
+- The `eeprom` commands need the new firmware. When the board answers `[HELP]` but no `[EEPROM]` line, `make eeprom-backup` saves the whole flash to `eeprom.firmware.hex`, flashes the temporary `tools/eeprom-bridge` firmware, dumps the EEPROM, writes the image back and verifies it by reading the flash again
+- `eeprom.firmware.hex` is reused rather than read again; delete it to read the flash afresh. The JSON line's `source` says `console` or `bridge`, and `firmware` names the saved image
+- A board left on the bridge after a failed restore is restored by the next `make eeprom-backup`, which recognises the bridge banner
 
 ## Record IR codes and learn the threshold
 
@@ -115,7 +117,7 @@ Learning (single press, shorter than 600 ms):
 |---|---|
 | No reply at 9600 | wrong port or baud, board still in the bootloader (wait 2 s), or the port is held by PlatformIO |
 | Garbled text | the port is open at the upload speed; close PlatformIO and reopen at 9600 |
-| `[EEPROM]` absent | firmware without the eeprom commands; flash the current firmware |
+| `[EEPROM]` absent | firmware without the eeprom commands; `make eeprom-backup` flashes the bridge and restores the saved image itself |
 | Upload fails | old/new bootloader mismatch; check `board` in `platformio.ini` |
 | EEPROM values look wrong | restore the last `eeprom.bin` or `eeprom.json`; a JSON restore keeps bytes 14-1023 |
 

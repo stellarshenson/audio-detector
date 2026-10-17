@@ -483,4 +483,10 @@ Serial download and upload of the stored settings and the raw EEPROM image
   - log: 2026-10-17T16:22:41Z @kj added
   - log: 2026-10-17T16:26:14Z @kj host tool decode and dry-run verified offline; live backup waits for the board
   - log: 2026-10-17T16:26:24Z @kj correction: the previous line belongs to ACC-EEPROM-63 (agent command)
+- [ ] `ACC-EEPROM-65` **Back up a board with older firmware** - HIGH; make eeprom-backup probes for eeprom dump; when the firmware has no such command it saves the whole flash to eeprom.firmware.hex, flashes the temporary tools/eeprom-bridge firmware, dumps the EEPROM, writes the image back and verifies the read-back; the saved image is reused on a later run
+  - test: run make eeprom-backup against a board whose firmware predates the eeprom commands; assert source bridge, the four files and the restored firmware
+  - test-tags: UNIT, FUNCTIONAL, MANUAL
+  - log: 2026-10-17T16:50:30Z @kj added
+  - log: 2026-10-17T16:52:20Z @kj offline: bridge firmware builds with 0 warnings; bridge dump/write/reject tests and the flash save, reuse and restore-order unit tests pass; make test 2026-10-17: 99 passed; live board run waits for the board
+  - log: 2026-10-17T16:55:47Z @kj offline check: make test 2026-10-17: 100 passed; a re-run that finds the bridge banner dumps the EEPROM and restores eeprom.firmware.hex without flashing the bridge again
 

@@ -67,12 +67,12 @@ The device accepts commands over USB serial at 9600 baud. A command runs when it
 
 
 ### EEPROM Backup and Restore ###
-The firmware keeps the START code in bytes 0-5, the STOP code in bytes 6-11 and the threshold in bytes 12-13. Back up before changing firmware and restore afterwards, from the project root:
+The firmware keeps the START code in bytes 0-5, the STOP code in bytes 6-11 and the threshold in bytes 12-13. Every revision that stored a threshold uses this layout; the earliest revisions stored only the START code in bytes 0-5, so their bytes 6-13 read as erased. Back up before changing firmware and restore afterwards, from the project root:
 ```
 make eeprom-backup PORT=/dev/ttyUSB0
 make eeprom-restore PORT=/dev/ttyUSB0 FILE=eeprom.bin
 ```
-The backup writes `eeprom.json` (the START and STOP codes, the threshold and the raw image as hex), `eeprom.bin` (the 1024 raw bytes) and `eeprom.hex` (Intel HEX). Restoring `eeprom.json` writes bytes 0-13 and keeps bytes 14-1023 as they are; restoring `.bin` or `.hex` writes all 1024 bytes. The restore command writes without a prompt, so pass `FILE` deliberately. A normal `pio run --target upload` writes flash only and keeps the EEPROM, so the stored values survive the first flash of this firmware; the `eeprom` commands need this firmware on the board. The tool is `tools/eeprom_tool.py`; it prints one JSON line with the settings and the written paths.
+The backup writes `eeprom.json` (the START and STOP codes, the threshold and the raw image as hex), `eeprom.bin` (the 1024 raw bytes) and `eeprom.hex` (Intel HEX). Restoring `eeprom.json` writes bytes 0-13 and keeps bytes 14-1023 as they are; restoring `.bin` or `.hex` writes all 1024 bytes. The restore command writes without a prompt, so pass `FILE` deliberately. A normal `pio run --target upload` writes flash only and keeps the EEPROM. The `eeprom` commands need this firmware on the board; for a board that runs an earlier firmware, `make eeprom-backup` saves the whole flash image to `eeprom.firmware.hex`, flashes the temporary bridge firmware from `tools/eeprom-bridge`, dumps the EEPROM, then writes the saved image back and verifies it by reading the flash again. A saved image is reused on a later run, so an interrupted recovery restores the same firmware. The tool is `tools/eeprom_tool.py`; it prints one JSON line with the settings and the written paths.
 
 ## Arduino ##
 The board used is the Arduino Nano and the libraries:

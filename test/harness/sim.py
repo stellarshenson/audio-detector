@@ -74,9 +74,9 @@ def symbol(name):
 
 
 class Board:
-    def __init__(self, eeprom=None, autostandby=False):
-        self._sim = _lib.sim_new(str(FIRMWARE).encode(), eeprom)
-        assert self._sim, f"simavr could not load {FIRMWARE}"
+    def __init__(self, eeprom=None, autostandby=False, firmware=FIRMWARE):
+        self._sim = _lib.sim_new(str(firmware).encode(), eeprom)
+        assert self._sim, f"simavr could not load {firmware}"
         self.serial = ""
         self.edges = {name: [] for name in [*PINS, CARRIER]}
         self._buffer = (Edge * 65536)()
