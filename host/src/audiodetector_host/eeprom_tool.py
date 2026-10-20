@@ -9,196 +9,37 @@ Firmware commands used:
     eeprom write <addr> <hex>  -> [EEPROM] wrote <n> bytes at <addr>
 
 A board that runs firmware without those commands is backed up through the
-temporary bridge firmware in tools/eeprom-bridge: the tool saves the whole
+temporary bridge firmware in scripts/eeprom-bridge: the tool saves the whole
 flash image, flashes the bridge, dumps the EEPROM, writes the saved image
-back and reads it back to verify it. The flash is restored in every case.
+back and reads it back to verify it. The saved image is written back after
+a failed bridge flash or dump too; an interrupted write-back can leave the
+board without working firmware until the next upload.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
-EEPROM_SIZE = 1024
-BLOCK = 16
-SETTINGS_SIZE = 14
-BAUD = 9600
+from .protocol import (
+    BLOCK,
+    EEPROM_SIZE,
+    SETTINGS_SIZE,
+    decode_image,
+    encode_image,
+    from_hex,
+    overlay_settings,
+    settings_of,
+    to_hex,
+)
+from .serial_client import NoEepromCommands, dump_board, write_board
 
-NEC, SONY, SAMSUNG = 3, 4, 7
-NOT_RECORDED = 255
-PROTOCOLS = {NEC: "NEC", SONY: "SONY", SAMSUNG: "SAMSUNG", NOT_RECORDED: "NOT_RECORDED"}
+EEPROM_DIR = Path("resources") / "eeprom"
 BRIDGE_BANNER = "[HELP] eeprom bridge"
-
-
-class NoEepromCommands(RuntimeError):
-    """the firmware on the board does not answer eeprom dump"""
-
-
-def decode_image(data: bytes) -> dict:
-    """the settings and the raw image as JSON-ready data"""
-    if len(data) != EEPROM_SIZE:
-        raise ValueError(f"expected {EEPROM_SIZE} bytes, got {len(data)}")
-
-    def code(offset: int) -> dict:
-        value = int.from_bytes(data[offset:offset + 4], "little")
-        kind = data[offset + 5]
-        return {
-            "type": kind,
-            "protocol": PROTOCOLS.get(kind, f"UNKNOWN_{kind}"),
-            "bits": data[offset + 4],
-            "value": value,
-            "value_hex": f"0x{value:08X}",
-        }
-
-    threshold = int.from_bytes(data[12:14], "little")
-    return {
-        "layout": 1,
-        "start": code(0),
-        "stop": code(6),
-        "threshold": threshold,
-        "threshold_set": threshold <= 1023,
-        "raw_size": len(data),
-        "raw_hex": data.hex(),
-        "sha256": hashlib.sha256(data).hexdigest(),
-    }
-
-
-def encode_image(settings: dict) -> bytes:
-    """a 1024-byte image from JSON settings; bytes 14-1023 are erased"""
-    data = bytearray(b"\xFF" * EEPROM_SIZE)
-    for offset, key in ((0, "start"), (6, "stop")):
-        code = settings[key]
-        value, bits, kind = int(code["value"]), int(code["bits"]), int(code["type"])
-        if not 0 <= value <= 0xFFFFFFFF:
-            raise ValueError(f"{key} value out of range")
-        if not 0 <= bits <= 0xFF or not 0 <= kind <= 0xFF:
-            raise ValueError(f"{key} bits or type out of range")
-        data[offset:offset + 6] = value.to_bytes(4, "little") + bytes([bits, kind])
-    threshold = int(settings["threshold"])
-    if not 0 <= threshold <= 0xFFFF:
-        raise ValueError("threshold out of range")
-    data[12:14] = threshold.to_bytes(2, "little")
-    return bytes(data)
-
-
-def overlay_settings(current: bytes, settings: dict) -> bytes:
-    """replace bytes 0-13 of current and keep bytes 14-1023"""
-    if len(current) != EEPROM_SIZE:
-        raise ValueError("current image must be 1024 bytes")
-    image = bytearray(current)
-    image[0:SETTINGS_SIZE] = encode_image(settings)[0:SETTINGS_SIZE]
-    return bytes(image)
-
-
-def to_hex(data: bytes) -> str:
-    """Intel HEX image, 16 bytes per record"""
-    lines = []
-    for offset in range(0, len(data), BLOCK):
-        chunk = data[offset:offset + BLOCK]
-        record = bytes([len(chunk)]) + offset.to_bytes(2, "big") + b"\x00" + chunk
-        checksum = (-sum(record)) & 0xFF
-        lines.append(":" + (record + bytes([checksum])).hex().upper())
-    lines.append(":00000001FF")
-    return "\n".join(lines) + "\n"
-
-
-def from_hex(text: str) -> bytes:
-    """read an Intel HEX image and require all 1024 bytes"""
-    data = bytearray(b"\xFF" * EEPROM_SIZE)
-    seen = bytearray(EEPROM_SIZE)
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if not line.startswith(":"):
-            raise ValueError(f"not an Intel HEX record: {line!r}")
-        record = bytes.fromhex(line[1:])
-        if sum(record) & 0xFF:
-            raise ValueError(f"bad Intel HEX checksum: {line!r}")
-        count, address, kind = record[0], int.from_bytes(record[1:3], "big"), record[3]
-        if kind == 0x01:
-            break
-        if kind != 0x00:
-            continue
-        payload = record[4:4 + count]
-        if address + len(payload) > EEPROM_SIZE:
-            raise ValueError("Intel HEX record outside the 1024-byte EEPROM")
-        data[address:address + len(payload)] = payload
-        seen[address:address + len(payload)] = b"\x01" * len(payload)
-    if not all(seen):
-        raise ValueError("Intel HEX file does not cover all 1024 bytes")
-    return bytes(data)
-
-
-def _open(port: str, baud: int):
-    """open the port, wait for the console after the board reset and return (serial, help banner)"""
-    import serial
-
-    ser = serial.Serial(port, baud, timeout=2, write_timeout=2)
-    ser.reset_input_buffer()
-    deadline = time.time() + 8
-    while time.time() < deadline:
-        ser.write(b"help\n")
-        end = time.time() + 0.5
-        while time.time() < end:
-            line = ser.readline().decode("ascii", "replace").strip()
-            if line.startswith("[HELP]"):
-                return ser, line
-    ser.close()
-    raise RuntimeError("no [HELP] reply; check the port and the 9600 baud console")
-
-
-def _line(ser, prefix: str, timeout: float = 3) -> str:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        line = ser.readline().decode("ascii", "replace").strip()
-        if line.startswith(prefix):
-            return line
-    raise RuntimeError(f"no reply starting {prefix!r}")
-
-
-def dump_board(port: str, baud: int = BAUD) -> tuple[bytes, str]:
-    """read all 1024 EEPROM bytes, 16 per command, and return (image, help banner);
-    NoEepromCommands when the first block is not answered"""
-    image = bytearray(EEPROM_SIZE)
-    ser, banner = _open(port, baud)
-    try:
-        for address in range(0, EEPROM_SIZE, BLOCK):
-            ser.write(f"eeprom dump {address}\n".encode())
-            try:
-                line = _line(ser, f"[EEPROM] {address} ", timeout=3 if address else 2)
-            except RuntimeError:
-                if address == 0:
-                    raise NoEepromCommands("the firmware did not answer eeprom dump")
-                raise
-            payload = line.split(" ", 2)[2]
-            if len(payload) != 2 * BLOCK:
-                raise RuntimeError(f"short dump line: {line!r}")
-            image[address:address + BLOCK] = bytes.fromhex(payload)
-    finally:
-        ser.close()
-    return bytes(image), banner
-
-
-def write_board(port: str, image: bytes, chunks, baud: int = BAUD) -> None:
-    """write (address, length) chunks and check each reply"""
-    ser, _ = _open(port, baud)
-    try:
-        for address, length in chunks:
-            payload = image[address:address + length].hex().upper()
-            ser.write(f"eeprom write {address} {payload}\n".encode())
-            expected = f"[EEPROM] wrote {length} bytes at {address}"
-            line = _line(ser, "[EEPROM] wrote ")
-            if line != expected:
-                raise RuntimeError(f"unexpected reply: {line!r}")
-    finally:
-        ser.close()
 
 
 def _avrdude_paths() -> tuple[str, str]:
@@ -294,12 +135,8 @@ def load_image(path: Path) -> tuple[bytes, str]:
     raise ValueError(f"unsupported file type: {path.suffix}")
 
 
-def settings_of(image: bytes) -> dict:
-    decoded = decode_image(image)
-    return {key: decoded[key] for key in ("start", "stop", "threshold")}
-
-
 def backup(port: str, out: Path, bridge: Path | None = None) -> dict:
+    out.parent.mkdir(parents=True, exist_ok=True)
     source, firmware = "console", None
     try:
         image, banner = dump_board(port)
@@ -357,14 +194,14 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("backup", help="read the EEPROM and write .bin, .hex and .json")
     p.add_argument("--port", required=True)
-    p.add_argument("--out", default="eeprom", help="output prefix without a suffix")
+    p.add_argument("--out", default=str(EEPROM_DIR / "eeprom"), help="output prefix without a suffix")
     p.add_argument("--bridge", type=Path, metavar="DIR",
                    help="bridge firmware project, flashed when the board firmware has no eeprom commands")
 
     p = sub.add_parser("restore", help="write .bin, .hex or .json to the EEPROM")
     p.add_argument("--port", required=True)
     p.add_argument("file", type=Path)
-    p.add_argument("--yes", action="store_true", help="write without asking")
+    p.add_argument("--yes", action="store_true", help="required to write; without it restore refuses")
     p.add_argument("--dry-run", action="store_true", help="print the plan without writing")
 
     p = sub.add_parser("decode", help="print the settings in a .bin, .hex or .json file")
@@ -383,9 +220,5 @@ def main(argv=None) -> int:
         result = decode_image(image)
     else:
         result = settings_of(dump_board(args.port)[0])
-    print(json.dumps(result, indent=2))
+    print(json.dumps(result))
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

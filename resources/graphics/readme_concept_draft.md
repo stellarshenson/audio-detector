@@ -39,4 +39,4 @@ background: subtle - faint grid dots or very light horizontal lines in the right
 no photograph, no gradient fill over text.
 ```
 
-Data sources: state names from `src/audio-detector.ino` (`state_audio_sense`, `state_audio_start`, `state_audio_enabled`, standby by trigger or 10 min silence); NEC timings 9000/4500 us header, 560 us bit mark, 560/1690 us spaces from `lib/IRremote/src/ir_NEC.cpp`.
+Data sources: state names from `src/audio-detector.ino` (`state_audio_sense`, `state_audio_start`, `state_audio_enabled`, standby by trigger or 10 min silence); NEC timings 9000/4500 us header, 560 us bit mark, 560/1690 us spaces from `lib/vendor/IRremote/src/ir_NEC.cpp`.

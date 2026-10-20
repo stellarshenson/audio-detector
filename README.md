@@ -1,9 +1,9 @@
-![Audio Detector](.images_readme/01-header+.svg)
+![Audio Detector](resources/graphics/01-header+.svg)
 
 # Audio Trigger / Detector
 This device listens for an audio signal at the RCA input and in response turns the audio equipment on using an IR remote code and a relay output. It turns the audio equipment off when the amplifier's 12V trigger goes low, or when no audio signal was detected for longer than 10 minutes.
 
-The firmware runs on an Arduino Nano and is built with PlatformIO: the sketch `src/audio-detector.ino` and the audio level driver `src/AudioLevel.h` and `src/AudioLevel.cpp`. The libraries it uses are bundled in `lib/`. The PCB design files and board images are in `misc/`.
+The firmware runs on an Arduino Nano and is built with PlatformIO: the sketch `src/audio-detector.ino` and the audio level driver `src/AudioLevel.h` and `src/AudioLevel.cpp`. The libraries it uses are bundled in `lib/vendor/`. The PCB design files are in `references/schematics/` and the board images in `resources/graphics/`.
 
 
 ## Initial Setup ##
@@ -67,12 +67,12 @@ The device accepts commands over USB serial at 9600 baud. A command runs when it
 
 
 ### EEPROM Backup and Restore ###
-The firmware keeps the START code in bytes 0-5, the STOP code in bytes 6-11 and the threshold in bytes 12-13. Every revision that stored a threshold uses this layout; the earliest revisions stored only the START code in bytes 0-5, so their bytes 6-13 read as erased. Back up before changing firmware and restore afterwards, from the project root:
+The firmware keeps the START code in bytes 0-5, the STOP code in bytes 6-11 and the threshold in bytes 12-13. Every revision that stored a threshold uses this layout; the earliest revisions stored only the START code in bytes 0-5, so their bytes 6-13 read as erased. Back up before changing firmware. The upload keeps the EEPROM, so restore only when the EEPROM was lost, and restore before learning the threshold again, because every restore (`.json`, `.bin` or `.hex`) writes bytes 12-13 back. After a restore run `make host-run PORT=<port>`: opening the port resets the board, which then loads the restored codes and threshold, and the JSON line shows them. Run the commands from the project root:
 ```
 make eeprom-backup PORT=/dev/ttyUSB0
-make eeprom-restore PORT=/dev/ttyUSB0 FILE=eeprom.bin
+make eeprom-restore PORT=/dev/ttyUSB0 FILE=resources/eeprom/eeprom.bin
 ```
-The backup writes `eeprom.json` (the START and STOP codes, the threshold and the raw image as hex), `eeprom.bin` (the 1024 raw bytes) and `eeprom.hex` (Intel HEX). Restoring `eeprom.json` writes bytes 0-13 and keeps bytes 14-1023 as they are; restoring `.bin` or `.hex` writes all 1024 bytes. The restore command writes without a prompt, so pass `FILE` deliberately. A normal `pio run --target upload` writes flash only and keeps the EEPROM. The `eeprom` commands need this firmware on the board; for a board that runs an earlier firmware, `make eeprom-backup` saves the whole flash image to `eeprom.firmware.hex`, flashes the temporary bridge firmware from `tools/eeprom-bridge`, dumps the EEPROM, then writes the saved image back and verifies it by reading the flash again. A saved image is reused on a later run, so an interrupted recovery restores the same firmware. The tool is `tools/eeprom_tool.py`; it prints one JSON line with the settings and the written paths.
+The backup writes three files under `resources/eeprom/`: `eeprom.json` (the START and STOP codes, the threshold and the raw image as hex), `eeprom.bin` (the 1024 raw bytes) and `eeprom.hex` (Intel HEX). Restoring `eeprom.json` writes bytes 0-13 and keeps bytes 14-1023 as they are; restoring `.bin` or `.hex` writes all 1024 bytes. The restore command writes without a prompt, so pass `FILE` deliberately. `make upload` writes flash only and keeps the EEPROM. The `eeprom` commands need this firmware on the board; for a board that runs an earlier firmware, `make eeprom-backup` saves the whole flash image to `resources/eeprom/eeprom.firmware.hex`, flashes the temporary bridge firmware from `scripts/eeprom-bridge`, dumps the EEPROM, then writes the saved image back and verifies it by reading the flash again. A run interrupted while the bridge firmware runs is finished by the next `make eeprom-backup`, which recognises the bridge banner and writes the saved image back. A run interrupted during the flash write-back can leave the board without working firmware; then the next backup stops with `no [HELP] reply`, and `make upload PORT=<port>` flashes the current firmware. The EEPROM and its codes stay, because the backup never writes the EEPROM and the write-back uses `-D`. The tool is the host package `host/src/audiodetector_host/`, run as `python -m audiodetector_host`; it prints one JSON line on success, with the settings and the written paths.
 
 ## Arduino ##
 The board used is the Arduino Nano and the libraries:
@@ -80,15 +80,14 @@ The board used is the Arduino Nano and the libraries:
 * **IRRemote v2.6.1** - IR code recording and sending was implemented with library https://github.com/z3t0/Arduino-IRremote
 * **JLed v4.5.2** - non-blocking led library used for various blinking patterns
 * **EnableInterrupt v1.1.0** - simple interrupt driver
-* **Smoothed 1.2.0** - moving average of the last 50 samples (taken 51 ms apart) inside `AudioLevel`; the copy in `lib/` carries fixes for undefined behaviour in `clear()` and for compiler warnings
+* **Smoothed 1.2.0** - moving average of the last 50 samples (taken 51 ms apart) inside `AudioLevel`; the copy in `lib/vendor/` carries fixes for undefined behaviour in `clear()` and for compiler warnings
 
 ### Build ###
 The project builds with PlatformIO (`platformio.ini`, environment `nanoatmega328`). In the lab the `firmware-avr` conda environment provides PlatformIO with the matching `atmelavr` platform:
 ```
-conda activate firmware-avr
-pio run                                                # build
-pio run --target upload --upload-port <serial device>  # build and flash
-pio device monitor                                     # serial command line at 9600 baud
+make build                          # build
+make upload PORT=<serial device>    # build and flash
+make monitor PORT=<serial device>   # serial command line at 9600 baud
 ```
 Boards with the new Nano bootloader need `board = nanoatmega328new` in `platformio.ini`.
 
@@ -99,7 +98,8 @@ make build    # firmware only
 make test     # firmware, simulator wrapper, unit and functional tests
 ```
 * `test/harness/` - `simharness.c` (C wrapper over libsimavr), `sim.py` (the simulated board), `ir.py` (NEC, Sony and Samsung timings), `eeprom.py` (the EEPROM layout)
-* `test/unit/` - tests of the IR decoder and the EEPROM layout helper
+* `test/host/` - tests of the IR decoder and the EEPROM layout helper
+* `host/tests/` - tests of the EEPROM backup and restore tool in the host package
 * `test/functional/` - one or more tests per acceptance criterion, named by its id in the docstring
 * `docs/acc-crit-audio-detector.md` and `docs/defects-audio-detector.md` - acceptance criteria and defects, written only through `pm-tools`
 
@@ -128,8 +128,8 @@ The system defines 5 states:
 ## Circuit and PCB ##
 Below are the electronics circuit diagram and the board files (600dpi PNG images) for the PCB fabrication
 
-![schematics](misc/audio-detector_schematics.png)
-![top](misc/audio-detector_top_600dpi.png)
-![bottom](misc/audio-detector_bottom_600dpi.png)
-![3d](misc/audio-detector_3d.png)
-![assembled](misc/audio-detector.png)
+![schematics](references/schematics/audio-detector_schematics.png)
+![top](resources/graphics/audio-detector_top_600dpi.png)
+![bottom](resources/graphics/audio-detector_bottom_600dpi.png)
+![3d](resources/graphics/audio-detector_3d.png)
+![assembled](resources/graphics/audio-detector.png)

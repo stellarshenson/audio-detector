@@ -1,0 +1,25 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v1.0.17
+_src_path: https://github.com/stellarshenson/copier-embedded-project.git
+arduino_board: nano
+arduino_bootloader: old
+arduino_libraries: 'Yes'
+arduino_sketch_link: 'No'
+author_name: Konrad Jelen <konrad.jelen@gmail.com>
+components:
+- notebooks
+- resources
+- references
+- simulator
+- docs
+- agents
+- env-installers
+description: Audio detector
+environment_scope: global
+git_init: 'No'
+host_module: audiodetector_host
+host_side: 'Yes'
+open_source_license: MIT
+platform: arduino
+project_name: audio-detector
+repo_name: audio-detector

@@ -4,7 +4,8 @@
    Serves only the eeprom dump and eeprom write commands over the 9600 baud
    console and never writes the EEPROM on its own. Flash it when the board
    runs firmware without those commands, take the backup with
-   tools/eeprom_tool.py, then flash the saved original image back.
+   host/src/audiodetector_host/eeprom_tool.py, then flash the saved original
+   image back.
 */
 
 #include <Arduino.h>

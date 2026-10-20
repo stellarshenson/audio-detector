@@ -1,14 +1,26 @@
-build/
+# PlatformIO
+.pio/
 *.hex
 *.elf
 *.bin
-eeprom.json
+
+# Rust
+target/
+
+# Build output
+build/
+
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
-.pio/
+
+# Local conda environment
+.conda/
+
+# Working files
 logs/
 tmp/
-
 notebooks/cache/
 .ipynb_checkpoints/
+eeprom.json

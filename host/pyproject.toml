@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audio-detector-host"
+version = "0.1.0"
+description = "Host-side code of audio-detector: talks to the board over serial"
+requires-python = ">=3.10"
+dependencies = ["pyserial"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

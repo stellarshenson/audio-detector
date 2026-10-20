@@ -1,6 +1,6 @@
 """Behavioural model of the Audio Detector Mk10 front end and of the firmware's audio level logic
 
-The circuit follows misc/audio-detector_schematics.png:
+The circuit follows references/schematics/audio-detector_schematics.png:
 
     SIG_IN -> C_AMP1 220n / R_VGND3 100k to VGND (47k/10k divider from 5 V)
            -> U1.1 LM324A, non-inverting, gain 1 + R_AMP1/(R_AMP2 + 1/sC_AMP2)

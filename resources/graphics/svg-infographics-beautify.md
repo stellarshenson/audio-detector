@@ -10,7 +10,7 @@
 
 ## Resolved pattern (rewritten by this skill each run)
 
-2026-10-17 - target `.images_readme/01-header.svg`, output suffix `+` (`01-header+.svg`, print variant `01-header+_print.svg`)
+2026-10-17 - target `resources/graphics/01-header.svg`, output suffix `+` (`01-header+.svg`, print variant `01-header+_print.svg`)
 - intensity: medium
 - colour variation: moderate (per-element hue variants in family: waveform cyan to blue-teal, IR train mint variants, pills keep their state colours)
 - shapes: moderate (concentric arc fragments behind the title block, a few particles near the waveform, a soft plate behind the signal band)
@@ -25,4 +25,4 @@
 
 ## History (append-only)
 
-# 2026-10-17 12:00 - .images_readme/01-header.svg - medium - OK
+# 2026-10-17 12:00 - resources/graphics/01-header.svg - medium - OK

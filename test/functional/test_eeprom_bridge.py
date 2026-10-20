@@ -11,7 +11,7 @@ import sim
 START = (eeprom.NEC, 32, 0x20DF10EF)
 STOP = (eeprom.NEC, 32, 0x20DF906F)
 THRESHOLD = 300
-BRIDGE = sim.ROOT / "tools/eeprom-bridge/.pio/build/nanoatmega328/firmware.elf"
+BRIDGE = sim.ROOT / "scripts/eeprom-bridge/.pio/build/nanoatmega328/firmware.elf"
 
 
 @pytest.fixture

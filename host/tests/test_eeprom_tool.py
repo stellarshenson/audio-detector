@@ -4,7 +4,7 @@ import json
 import subprocess
 
 import eeprom
-import eeprom_tool
+from audiodetector_host import eeprom_tool
 
 
 def sample():
@@ -175,3 +175,15 @@ def test_backup_without_bridge_names_the_option(monkeypatch, tmp_path):
         assert "--bridge" in str(error)
     else:
         raise AssertionError("backup without --bridge did not stop")
+
+
+def test_backup_writes_under_resources_eeprom(monkeypatch, tmp_path, capsys):
+    """ACC-LAYOUT-84 a backup without --out creates resources/eeprom/ and writes the three files there"""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(eeprom_tool, "dump_board", lambda port: (sample(), "[HELP] available commands"))
+
+    assert eeprom_tool.main(["backup", "--port", "port"]) == 0
+
+    (line,) = capsys.readouterr().out.splitlines()
+    assert json.loads(line)["backup"] == {kind: f"resources/eeprom/eeprom.{kind}" for kind in ("bin", "hex", "json")}
+    assert (tmp_path / "resources" / "eeprom" / "eeprom.bin").read_bytes() == sample()

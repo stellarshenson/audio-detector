@@ -22,18 +22,18 @@ ls -l /dev/serial/by-id/ 2>/dev/null
 ## Build and test
 
 ```bash
-make build            # conda run -n firmware-avr pio run
+make build            # build the firmware
 make test             # build, harness shim, pytest
 ```
 
 - Run `make test` before and after a firmware change; a clean build has 0 warnings from `src/`
 - The firmware runs on working hardware: keep the EEPROM layout - bytes 0-5 START code, 6-11 STOP code, 12-13 threshold, 14-15 unused
-- Never run `pio run -t erase`; it wipes the EEPROM. `pio run -t upload` writes flash only and keeps the EEPROM
+- Never run `pio run -t erase`; it wipes the EEPROM. `make upload` writes flash only and keeps the EEPROM
 
 ## Flash
 
 ```bash
-conda run -n firmware-avr pio run --target upload --upload-port /dev/ttyUSB0
+make upload PORT=/dev/ttyUSB0
 ```
 
 - Old bootloader: `board = nanoatmega328` in `platformio.ini`
@@ -70,26 +70,27 @@ PY
 
 - `eeprom dump` returns the 16 bytes at the address as uppercase hex, prefixed by the address
 - `eeprom write` takes 1 to 16 bytes; an address outside 0-1023, an odd hex length, non-hex text or more than 16 bytes is ignored with no reply
-- Use `tools/eeprom_tool.py` for EEPROM work; use the raw console for `status`, `set` and `reboot`
+- Use `make eeprom-backup`, `make eeprom-restore` and `make host-run` for EEPROM work; use the raw console for `status`, `set` and `reboot`
 
 ## EEPROM backup and restore
 
 ```bash
 make eeprom-backup PORT=/dev/ttyUSB0
-make eeprom-restore PORT=/dev/ttyUSB0 FILE=eeprom.bin
-make eeprom-restore PORT=/dev/ttyUSB0 FILE=eeprom.json
+make eeprom-restore PORT=/dev/ttyUSB0 FILE=resources/eeprom/eeprom.bin
+make eeprom-restore PORT=/dev/ttyUSB0 FILE=resources/eeprom/eeprom.json
 ```
 
-- `eeprom.json`: START and STOP codes (type, protocol, bits, value), threshold, the 1024-byte image as `raw_hex`, SHA-256
-- `eeprom.bin`: 1024 raw bytes; `eeprom.hex`: Intel HEX of the same image
+- `resources/eeprom/eeprom.json`: START and STOP codes (type, protocol, bits, value), threshold, the 1024-byte image as `raw_hex`, SHA-256
+- `resources/eeprom/eeprom.bin`: 1024 raw bytes; `resources/eeprom/eeprom.hex`: Intel HEX of the same image
 - Restore `.bin` or `.hex`: writes all 1024 bytes
 - Restore `.json`: reads the current image, writes bytes 0-13 only, keeps 14-1023
-- Both commands are non-interactive and print one JSON line; an agent can run them
-- Take a backup before the first flash of a firmware that changes the EEPROM layout
+- Restore only when the EEPROM was lost, and before learning the threshold again: every restore (`.json`, `.bin` or `.hex`) writes bytes 12-13 back. After a restore run `make host-run PORT=<port>`: opening the port resets the board, which then loads the restored codes and threshold, and the JSON line shows them
+- Both commands are non-interactive and print one JSON line on success; an agent can run them
+- Take a backup before the first upload of a new firmware
 - The backup files are in `.gitignore`; do not commit the user's codes unless asked
-- The `eeprom` commands need the new firmware. When the board answers `[HELP]` but no `[EEPROM]` line, `make eeprom-backup` saves the whole flash to `eeprom.firmware.hex`, flashes the temporary `tools/eeprom-bridge` firmware, dumps the EEPROM, writes the image back and verifies it by reading the flash again
+- The `eeprom` commands need the new firmware. When the board answers `[HELP]` but no `[EEPROM]` line, `make eeprom-backup` saves the whole flash to `resources/eeprom/eeprom.firmware.hex`, flashes the temporary `scripts/eeprom-bridge` firmware, dumps the EEPROM, writes the image back and verifies it by reading the flash again
 - `eeprom.firmware.hex` is reused rather than read again; delete it to read the flash afresh. The JSON line's `source` says `console` or `bridge`, and `firmware` names the saved image
-- A board left on the bridge after a failed restore is restored by the next `make eeprom-backup`, which recognises the bridge banner
+- A run interrupted while the bridge firmware runs is finished by the next `make eeprom-backup`, which recognises the bridge banner and writes the saved image back. A run interrupted during the flash write-back can leave the board without working firmware; then the next backup stops with `no [HELP] reply`, and `make upload PORT=<port>` flashes the current firmware. The EEPROM and its codes stay, because the backup never writes the EEPROM and the write-back uses `-D`
 
 ## Record IR codes and learn the threshold
 
@@ -119,14 +120,14 @@ Learning (single press, shorter than 600 ms):
 | Garbled text | the port is open at the upload speed; close PlatformIO and reopen at 9600 |
 | `[EEPROM]` absent | firmware without the eeprom commands; `make eeprom-backup` flashes the bridge and restores the saved image itself |
 | Upload fails | old/new bootloader mismatch; check `board` in `platformio.ini` |
-| EEPROM values look wrong | restore the last `eeprom.bin` or `eeprom.json`; a JSON restore keeps bytes 14-1023 |
+| EEPROM values look wrong | restore the last `resources/eeprom/eeprom.bin` or `resources/eeprom/eeprom.json`; a JSON restore keeps bytes 14-1023 |
 
 ## References
 
 - `README.md` - user-facing behaviour, wiring and build
 - `src/audio-detector.ino` - state machine, commands and EEPROM access
 - `src/AudioLevel.h`, `src/AudioLevel.cpp` - sampling, threshold and hysteresis
-- `tools/eeprom_tool.py` - backup and restore CLI
+- `host/src/audiodetector_host/eeprom_tool.py` - backup and restore CLI, run as `python -m audiodetector_host`
 - `test/harness/` - simavr board model used by `make test`
 
 <!-- improved 2026-10-17 | body 0→946w / 0→125L | benchmark n/a (not-requested) | via improve-skill -->
