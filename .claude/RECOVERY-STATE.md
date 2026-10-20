@@ -51,3 +51,15 @@ Launch the pinned confirming round of review round 5:
 - ACC-LAYOUT-68 closed (wf_18958f43-c57, check all_pass): update v1.0.16 to v1.0.17 clean, only _commit changed (patches/fix-5-update-v1.0.17.diff). Pinned confirm on fix-5: run wf_018a3369-a5d, launcher tmp/workflows/review-r6/confirm-r3.js
 - Pinned confirm wf_018a3369-a5d on fix-5: SHIP, 3 MINOR non-material open (AGENTS.md:99 dated v1.0.16 still true; ACC-LAYOUT-68 test line cannot fail on the write-back; ACC-LAYOUT-66 evidence cites v1.0.16); result tmp/review/round6/confirm-r3-result.json; waiting on the owner
 - Owner accepted the final SHIP; tracker edits done (wf_c85c9b5a-24b, all_pass): ACC-LAYOUT-68 test line now asserts a newer tag and a clean git status, ACC-LAYOUT-66 log records _commit v1.0.17. Remaining: ACC-EEPROM-63, 64, 65 (board on USB), commit approval, sending the two deferred template text issues (owner to decide), journal entry 13
+
+## BRACE 2026-10-20 16:10 - template update v1.0.19 in flight
+
+- HORIZON: `brace-horizon` printed `CLEAR`; no reason given, so treated as SERVER RESTART (nothing detached runs, so the next session relaunches; no process to reattach)
+- Stopped workflow: run `wf_ccd627cc-6a4`, script `tmp/workflows/template-update-v1.0.19/workflow.js`, no args, transcript `~/.claude/projects/-home-lab-workspace-private-embedded-projects-audio-detector/f4a546c7-d5ad-4bae-866f-5e2a4a55f336/subagents/workflows/wf_ccd627cc-6a4` (`journal.jsonl` holds the finished agents)
+- Phase reached: Update done (`update.json`), Port done (`port.json`), Gates in flight (it had started `make test`, `logs/v1.0.19-test.log` partial; no `gates.json`), Check not started
+- Update result: copier update v1.0.17 to v1.0.19 exit 0, no .rej, none of the 11 removed starter files back; one Makefile conflict resolved (STM32_SERIAL_MODE stays removed, `-include .env` and its comment taken); patch `patches/1-copier-update.diff`
+- Port result: `.gitignore` gets `.env` (`patches/2-gitignore-env.diff`), `.agents/workflows/build-and-flash.md` step 2 (`patches/3-build-and-flash-env-port.diff`); not ported, no matching text in the project: the README `.env` paragraph and tree line, the device skill step 3
+- Tree, staged and uncommitted (the stop changed nothing): `.agents/workflows/build-and-flash.md`, `.copier-answers.yml` (_commit v1.0.19), `.env.example` (new), `.gitignore`, `Makefile`; no `.env` left in the project; trackers unchanged
+- Running: nothing (no detached job, no subagent)
+- FIRST ACTION: relaunch `Workflow({scriptPath: '/home/lab/workspace/private/embedded-projects/audio-detector/tmp/workflows/template-update-v1.0.19/workflow.js'})`; Update and Port return their checkpoints from disk (update.json present with _commit v1.0.19; port patches present and staged), Gates and Check run in full
+- Then: report to the owner, including the README and device skill hunks that were not ported, and that the ACC-LAYOUT-68 test line asserts only .copier-answers.yml changes, which an update with template file changes does not meet; commit needs the owner's approval
